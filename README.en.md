@@ -2,6 +2,24 @@
 
 Turn a Markdown documentation project (multi-chapter tutorials, notes, course materials, handbooks) into a static documentation site, with one-command deployment to a remote server.
 
+## Install from a desktop agent
+
+In Trae CN, Codex, Claude Code or any similar desktop agent, just send the repository URL:
+
+```
+Install this skill: https://github.com/binny2026/md2website
+```
+
+The agent clones the repo and runs `./install.sh`. Without a TTY the script installs into **every detected agent directory**, so the calling agent can load it too.
+
+Start a new session (or refresh the skill list) after installation.
+
+Or hand it the full command:
+
+```bash
+git clone git@github.com:binny2026/md2website.git ~/md2website && cd ~/md2website && ./install.sh --all
+```
+
 ## Why a dedicated tool
 
 The site engine compiles every `.md` file as a **Vue Single-File Component**. Real-world Markdown notes almost always contain patterns that Vue misinterprets:
@@ -45,7 +63,7 @@ cd md2website
 - Agents whose `skills` directory does not exist are skipped — the installer never creates directories behind your back.
 - Each selected directory receives a full copy of the skill.
 
-Non-interactive runs (CI, pipes) without arguments fall back to `~/.workbuddy/skills/md2website`.
+Non-interactive runs (agents, CI, pipes) without arguments install into **every detected agent directory** (equivalent to `--all`), so the agent that ran the installer can load the skill too. Use `--dir` to target a single directory.
 
 Other flags:
 
@@ -77,7 +95,17 @@ python3 scripts/_env.py
 
 ## Quick start
 
-### One-click (recommended)
+### Use from an agent (recommended)
+
+After installing and starting a new session, just tell the agent "turn this folder into a documentation site" (or name the source explicitly):
+
+```
+Use Skill: md2website /path/to/md-folder generate the site
+```
+
+The agent handles scan → generate → build → preview for you.
+
+### One-click (script)
 
 ```bash
 # After installing, copy the entry point into your Markdown folder

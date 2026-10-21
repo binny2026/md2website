@@ -448,8 +448,10 @@ case "$MODE" in
       elif [ -t 0 ]; then
         interactive_select
       else
-        # 非交互环境：保持旧行为，装到默认目录
-        add_target "$FALLBACK_DIR"
+        # 非交互环境（Agent 执行 / CI / 管道）：装到所有已检测到的 Agent 目录，
+        # 确保发起安装的那个 Agent 也能加载；一个都没检测到时退回默认目录
+        collect_all_targets
+        [ -n "$TARGETS" ] || add_target "$FALLBACK_DIR"
       fi
     fi
 

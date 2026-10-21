@@ -4,6 +4,24 @@
 
 **源目录只读**：所有产物写到独立目录，不会改动你的原始 Markdown。
 
+## 在桌面 Agent 里安装
+
+在 Trae CN、Codex、Claude Code 等桌面 Agent 的对话框里，直接发仓库地址并说明意图即可：
+
+```
+安装这个技能：https://github.com/binny2026/md2website
+```
+
+Agent 会克隆仓库并执行 `./install.sh`。非交互环境下脚本默认装到**所有已检测到的 Agent 技能目录**，因此发起安装的 Agent 也能直接加载。
+
+装完**新开一个会话**（或刷新技能列表）才能看到这个技能。
+
+也可以直接给它一条完整命令：
+
+```bash
+git clone git@github.com:binny2026/md2website.git ~/md2website && cd ~/md2website && ./install.sh --all
+```
+
 ## 功能特性
 
 | 能力 | 说明 |
@@ -41,7 +59,7 @@
 
 ## 安装
 
-### 方式一：从仓库安装（推荐）
+### 方式一：从仓库安装
 
 ```bash
 git clone git@github.com:binny2026/md2website.git md2website
@@ -69,8 +87,8 @@ cd md2website
 - 未检测到 `skills` 目录的 Agent 会提示并跳过，不会替你在机器上创建目录
 - 每个选中的目录各放一份完整 skill，互不影响
 
-非交互场景（CI、管道、`sh script.sh`）不传参数时，退回旧行为，安装到默认目录
-`~/.workbuddy/skills/md2website`。
+非交互场景（Agent 执行、CI、管道）不传参数时，会安装到**所有已检测到的 Agent 目录**（等价于自动 `--all`），
+保证发起安装的 Agent 也能加载；只想装一个目录就用 `--dir` 显式指定。
 
 其余参数：
 
@@ -174,7 +192,17 @@ python3 ~/.workbuddy/skills/md2website/scripts/_env.py   # 安装后再自检一
 
 ## 使用
 
-### 方式一：一键建站（最省事，推荐）
+### 方式一：在 AI Agent 里使用（推荐）
+
+装好并新开一个会话后，直接对 Agent 说「把这个目录做成文档站 / 生成文档站 / 部署文档站到服务器」即可，Agent 会读 `SKILL.md` 执行完整流程。也可以显式指定源目录：
+
+```
+Use Skill: md2website /path/to/md目录 生成站点
+```
+
+扫描、生成、构建、预览都由 Agent 完成，不需要你手动敲命令。
+
+### 方式二：一键建站（脚本直接跑）
 
 把入口脚本复制到你的 Markdown 目录，双击或执行即可：
 
@@ -209,14 +237,6 @@ cd ~/你的md目录 && ./build.sh
 
 ```bash
 ./build.sh --dir ~/笔记/课程 --out ~/笔记/课程-site --title "我的课程" --name my-course --no-open
-```
-
-### 方式二：在 AI Agent 里使用
-
-装好后对 agent 说「把这个目录做成文档站 / 生成文档站 / 部署文档站到服务器」即可，agent 会读 `SKILL.md` 执行完整流程。也可显式指定源目录：
-
-```
-Use Skill: md2website /path/to/md目录 生成站点
 ```
 
 ### 方式三：分步命令行（排错或精细控制）

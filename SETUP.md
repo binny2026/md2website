@@ -71,6 +71,16 @@ cp ~/.workbuddy/skills/md2website/assets/build.sh ~/你的md目录/
 
 ### 第一步：安装
 
+也可以在 Trae CN / Codex / Claude Code 等桌面 Agent 对话框里直接发仓库地址：
+
+```
+安装这个技能：https://github.com/binny2026/md2website
+```
+
+Agent 会克隆并执行安装脚本（非交互环境自动装到所有已检测到的 Agent 目录），装完新开会话即可。
+
+手动安装：
+
 ```bash
 git clone <仓库地址> md2website
 cd md2website
@@ -101,7 +111,8 @@ cd md2website
 ./install.sh --check                # 只检查环境
 ```
 
-非交互环境不传参数时，仍装到 `~/.workbuddy/skills/md2website`。
+非交互环境（Agent 执行 / CI / 管道）不传参数时，会装到所有已检测到的 Agent 目录（等价自动 `--all`）；
+只想装一个目录就用 `--dir` 指定。
 下文命令里的 `~/.workbuddy/skills/md2website` 请替换成你的实际安装路径（安装结束会打印）。
 
 ---
