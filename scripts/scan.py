@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-扫描 Markdown 项目，检测会阻断 VitePress/Vue 构建的语法冲突。
+扫描 Markdown 项目，检测会阻断文档站构建的语法冲突。
 
 用法:
     python3 scan.py <md项目目录> [--json]
@@ -163,7 +163,7 @@ def main():
               f"图片引用 {stats['images_referenced']} 处，缺失 {stats['images_missing']} 处\n")
 
         if not findings:
-            print('未发现阻断性问题，可直接初始化 VitePress。')
+            print('未发现阻断性问题，可直接初始化文档站。')
             return 0
 
         for fid, items in sorted(by_id.items(), key=lambda kv: -len(kv[1])):

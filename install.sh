@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ============================================================
-# md-to-vitepress 安装脚本
+# md2website 安装脚本
 #
 # 用法：
-#   ./install.sh                 安装到 ~/.workbuddy/skills/md-to-vitepress
+#   ./install.sh                 安装到 ~/.workbuddy/skills/md2website
 #   ./install.sh --dir <路径>     安装到指定目录
 #   ./install.sh --uninstall     卸载
 #   ./install.sh --check         只检查环境，不安装
 # ============================================================
 set -euo pipefail
 
-NAME="md-to-vitepress"
+NAME="md2website"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_DIR="$HOME/.workbuddy/skills/$NAME"
 TARGET_DIR="$DEFAULT_DIR"
@@ -100,8 +100,8 @@ case "$MODE" in
     fi
 
     # 安全校验：只允许删除看起来是本 skill 的目录
-    [ -f "$TARGET_DIR/SKILL.md" ] && grep -q 'name: md-to-vitepress' "$TARGET_DIR/SKILL.md" 2>/dev/null \
-      || die "拒绝卸载：$TARGET_DIR 不像 md-to-vitepress 安装目录（缺 SKILL.md 或标识不符）"
+    [ -f "$TARGET_DIR/SKILL.md" ] && grep -q 'name: md2website' "$TARGET_DIR/SKILL.md" 2>/dev/null \
+      || die "拒绝卸载：$TARGET_DIR 不像 md2website 安装目录（缺 SKILL.md 或标识不符）"
     case "$TARGET_DIR" in
       "$HOME"|"/"|"/usr"|"/tmp"|"") die "拒绝卸载：目标路径过于危险: $TARGET_DIR" ;;
     esac

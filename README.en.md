@@ -1,10 +1,10 @@
-# md-to-vitepress
+# md2website
 
-Turn a Markdown documentation project (multi-chapter tutorials, notes, course materials, handbooks) into a VitePress static site, with one-command deployment to a remote server.
+Turn a Markdown documentation project (multi-chapter tutorials, notes, course materials, handbooks) into a static documentation site, with one-command deployment to a remote server.
 
 ## Why a dedicated tool
 
-VitePress compiles every `.md` file as a **Vue Single-File Component**. Real-world Markdown notes almost always contain patterns that Vue misinterprets:
+The site engine compiles every `.md` file as a **Vue Single-File Component**. Real-world Markdown notes almost always contain patterns that Vue misinterprets:
 
 | Pattern | What Vue does | Result |
 | --- | --- | --- |
@@ -24,12 +24,12 @@ These are handled automatically: the generated `config.mjs` escapes Vue-conflict
 ## Install
 
 ```bash
-git clone <repo-url> md-to-vitepress
-cd md-to-vitepress
+git clone <repo-url> md2website
+cd md2website
 ./install.sh
 ```
 
-Installs to `~/.workbuddy/skills/md-to-vitepress` by default. Use `--dir <path>` to change, `--check` to only verify the environment, `--uninstall` to remove.
+Installs to `~/.workbuddy/skills/md2website` by default. Use `--dir <path>` to change, `--check` to only verify the environment, `--uninstall` to remove.
 
 Run a quick self-check anytime:
 
@@ -54,7 +54,7 @@ Want to choose the title and output location? Use `./build.sh --wizard`.
 ### Step by step
 
 ```bash
-SKILL=~/.workbuddy/skills/md-to-vitepress
+SKILL=~/.workbuddy/skills/md2website
 
 # 1. Inspect the source docs (read-only)
 python3 $SKILL/scripts/scan.py ~/my-notes
@@ -114,7 +114,7 @@ Options: `--profile <name>` (use another server), `--no-build`, `--dry-run`.
 | --- | --- | --- |
 | `scan.py` | Detect Vue syntax conflicts and missing images | No |
 | `fix.py` | Rewrite `<img>` tags, correct image paths | Yes (`--dry-run` to preview) |
-| `init.py` | Generate a complete VitePress project | Only the new output dir |
+| `init.py` | Generate a complete documentation site project | Only the new output dir |
 | `profile.py` | Manage deployment profiles | `~/.workbuddy/deploy-profiles/` |
 | `_env.py` | Environment detection (Python / Node) | No |
 | `assets/build.sh` | One-click entry: scan → generate → install → build → preview | Output dir only |

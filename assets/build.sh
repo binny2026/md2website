@@ -16,7 +16,7 @@
 # HELP_END
 set -euo pipefail
 
-NAME="md-to-vitepress"
+NAME="md2website"
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 while [ -L "$SCRIPT_PATH" ]; do
   LINK_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
@@ -49,7 +49,7 @@ if [ -z "$SKILL_DIR" ]; then
     [ -d "$cand" ] && [ -f "$cand/scripts/init.py" ] && { SKILL_DIR="$(cd "$cand" && pwd)"; break; }
   done
 fi
-[ -n "${SKILL_DIR:-}" ] || die "找不到 md-to-vitepress skill 本体（缺 scripts/init.py）
+[ -n "${SKILL_DIR:-}" ] || die "找不到 md2website skill 本体（缺 scripts/init.py）
    请先运行 skill 目录下的 ./install.sh 安装，或用 --skill <路径> 指定"
 
 PY=""

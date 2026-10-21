@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-把 Markdown 项目初始化为 VitePress 文档站（不删除、不覆盖源 Markdown 内容）。
+把 Markdown 项目初始化为静态文档站（不删除、不覆盖源 Markdown 内容）。
 
 用法:
     python3 init.py <md源目录> [--out <输出目录>] [--title 标题] [--chapters]
@@ -142,7 +142,7 @@ def build_md_map(src_dir, slug):
 
 
 def fix_dead_links(docs, md_map):
-    """把指向源 .md 文件的 markdown 链接改写为站点 URL，避免 VitePress 死链报错。"""
+    """把指向源 .md 文件的 markdown 链接改写为站点 URL，避免站点死链报错。"""
     if not md_map:
         return 0
     link_re = re.compile(r'\]\(([^)]+)\)')
@@ -543,7 +543,7 @@ DEPLOY_README = '''# 部署配置说明
 ## 首次配置
 
     PY=python3
-    SKILL=~/.workbuddy/skills/md-to-vitepress
+    SKILL=~/.workbuddy/skills/md2website
 
     # 1) 创建配置档
     $PY $SKILL/scripts/profile.py set --name @@NAME@@ \\
@@ -666,14 +666,14 @@ def main():
         print(f'源目录不存在: {src}', file=sys.stderr)
         return 1
 
-    out = os.path.abspath(args.out or os.path.join(os.getcwd(), 'outputs', 'vitepress-site'))
+    out = os.path.abspath(args.out or os.path.join(os.getcwd(), 'outputs', 'md2website-site'))
     if os.path.exists(out):
         print(f'输出目录已存在，拒绝覆盖: {out}\n'
               f'如需重建请先手动删除，或指定其他 --out', file=sys.stderr)
         return 1
 
     title = args.title or os.path.basename(src)
-    site_name = args.name or re.sub(r'[^a-z0-9-]+', '-', title.lower()).strip('-') or 'vitepress-site'
+    site_name = args.name or re.sub(r'[^a-z0-9-]+', '-', title.lower()).strip('-') or 'md2website'
     base = args.base if args.base.endswith('/') else args.base + '/'
 
     chapters, root_mds = find_md_dirs(src)

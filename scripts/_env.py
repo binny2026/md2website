@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-环境探测与依赖管理，供 md-to-vitepress 各脚本共用。
+环境探测与依赖管理，供 md2website 各脚本共用。
 
 不写死任何解释器路径，全部运行时探测，因此可在任意机器上运行。
 """
@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 
-MIN_NODE_MAJOR = 18          # VitePress 1.x 要求
+MIN_NODE_MAJOR = 18          # 文档站引擎 1.x 要求
 PKG_NAME = 'vitepress'
 PKG_VERSION = '^1.6.4'
 
@@ -104,8 +104,8 @@ def npx_path():
 
 # ---------------------------------------------------------------- 依赖
 
-def has_vitepress(project_dir):
-    """检查项目内是否已装 vitepress"""
+def has_engine(project_dir):
+    """检查项目内是否已装站点引擎"""
     local = os.path.join(project_dir, 'node_modules', PKG_NAME, 'package.json')
     return os.path.isfile(local)
 
@@ -133,7 +133,7 @@ def install_deps(project_dir, quiet=False):
 
 def ensure_deps(project_dir, auto_install=True):
     """确保依赖就绪，返回 (ok, message)"""
-    if has_vitepress(project_dir):
+    if has_engine(project_dir):
         return True, 'ready'
     if not auto_install:
         return False, 'missing'

@@ -1,6 +1,6 @@
-# md-to-vitepress
+# md2website
 
-把一个 Markdown 文档项目（多章节教程、笔记、课件、手册）改造成 VitePress 静态文档站，并支持一键部署到远程服务器。
+把一个 Markdown 文档项目（多章节教程、笔记、课件、手册）改造成静态文档站，并支持一键部署到远程服务器。
 
 **源目录只读**：所有产物写到独立目录，不会改动你的原始 Markdown。
 
@@ -10,7 +10,7 @@
 | --- | --- |
 | 自动识别章节 | 按子目录递归扫描，取每篇首个 `H1` 作标题，主文档自动改名为 `index.md` |
 | 多级目录 / 合集目录 | 子目录递归成分组侧边栏；多文件目录整组展开逐篇导航 |
-| 侧边栏 / 全文搜索 / 代码复制 / 图片放大 | VitePress 原生能力全部开启 |
+| 侧边栏 / 全文搜索 / 代码复制 / 图片放大 | 站点内置能力全部开启 |
 | 科技感双主题 | 深色 / 浅色，背景网格 + 光晕，渐变标题与按钮 |
 | 语法冲突自动修复 | `<https://...>`、`{{ }}`、`<email_hash:...>`、`<img>` 标签等会被 Vue 误判的写法自动转义 |
 | 死链自动改写 | 正文里指向源 `.md` 的相对链接自动改写为站点 URL |
@@ -44,17 +44,17 @@
 ### 方式一：从仓库安装（推荐）
 
 ```bash
-git clone git@github.com:binny2026/md2website.git md-to-vitepress
-cd md-to-vitepress
+git clone git@github.com:binny2026/md2website.git md2website
+cd md2website
 ./install.sh
 ```
 
-默认安装到 `~/.workbuddy/skills/md-to-vitepress`。
+默认安装到 `~/.workbuddy/skills/md2website`。
 
 ### 方式二：安装到自定义目录
 
 ```bash
-./install.sh --dir ~/my-skills/md-to-vitepress
+./install.sh --dir ~/my-skills/md2website
 ```
 
 安装到别处时，把下文命令里的 `SKILL` 换成实际路径。
@@ -63,14 +63,14 @@ cd md-to-vitepress
 
 ```bash
 ./install.sh --check     # 只检查环境（Python / Node 版本），不安装
-python3 ~/.workbuddy/skills/md-to-vitepress/scripts/_env.py   # 安装后再自检一次
+python3 ~/.workbuddy/skills/md2website/scripts/_env.py   # 安装后再自检一次
 ```
 
 ### 卸载
 
 ```bash
 ./install.sh --uninstall                        # 当前目录是安装副本时
-./install.sh --uninstall --dir ~/.workbuddy/skills/md-to-vitepress   # 显式指定
+./install.sh --uninstall --dir ~/.workbuddy/skills/md2website   # 显式指定
 ```
 
 卸载不会删除部署配置档（`~/.workbuddy/deploy-profiles/`），需要时手动清理。
@@ -86,7 +86,7 @@ python3 ~/.workbuddy/skills/md-to-vitepress/scripts/_env.py   # 安装后再自�
 把入口脚本复制到你的 Markdown 目录，双击或执行即可：
 
 ```bash
-cp ~/.workbuddy/skills/md-to-vitepress/assets/build.sh ~/你的md目录/
+cp ~/.workbuddy/skills/md2website/assets/build.sh ~/你的md目录/
 cd ~/你的md目录 && ./build.sh
 ```
 
@@ -123,13 +123,13 @@ cd ~/你的md目录 && ./build.sh
 装好后对 agent 说「把这个目录做成文档站 / 生成文档站 / 部署文档站到服务器」即可，agent 会读 `SKILL.md` 执行完整流程。也可显式指定源目录：
 
 ```
-Use Skill: md-to-vitepress /path/to/md目录 生成站点
+Use Skill: md2website /path/to/md目录 生成站点
 ```
 
 ### 方式三：分步命令行（排错或精细控制）
 
 ```bash
-SKILL=~/.workbuddy/skills/md-to-vitepress
+SKILL=~/.workbuddy/skills/md2website
 
 # 1) 扫描源目录（只读，不改文件），先看有没有阻断项
 python3 $SKILL/scripts/scan.py ~/你的md目录
@@ -155,7 +155,7 @@ npm run preview      # http://127.0.0.1:4173
 | 参数 | 说明 |
 | --- | --- |
 | `source` | Markdown 源目录（位置参数） |
-| `--out` | 输出目录，必须不存在；默认 `./outputs/vitepress-site` |
+| `--out` | 输出目录，必须不存在；默认 `./outputs/md2website-site` |
 | `--title` | 站点标题 |
 | `--subtitle` | 站点副标题 |
 | `--name` | 站点标识名，默认由标题转换 |
@@ -179,7 +179,7 @@ npm run build
 
 ```bash
 cd ~/你的md目录-site
-python3 ~/.workbuddy/skills/md-to-vitepress/scripts/profile.py wizard --project "$(pwd)"
+python3 ~/.workbuddy/skills/md2website/scripts/profile.py wizard --project "$(pwd)"
 ```
 
 会依次询问主机、账号、密码（留空则用 SSH 密钥）、私钥路径、远程目录、端口、站点根路径（仅作记录，不参与构建），结果写入站点本地 `.deploy-local.yml`（权限 600，已被 `.gitignore` 忽略，不会上传服务器）。
@@ -188,7 +188,7 @@ python3 ~/.workbuddy/skills/md-to-vitepress/scripts/profile.py wizard --project 
 
 ```bash
 PY=python3
-SKILL=~/.workbuddy/skills/md-to-vitepress
+SKILL=~/.workbuddy/skills/md2website
 
 # 1) 创建配置档
 $PY $SKILL/scripts/profile.py set --name my-doc \
@@ -330,7 +330,7 @@ ssh_key: $HOME/.ssh/id_ed25519
 | `scripts/_env.py` | 探测 Python / Node，给出安装指引 | 只读 |
 | `scripts/scan.py` | 检测 Vue 语法冲突、缺失图片 | 只读 |
 | `scripts/fix.py` | 修复 `<img>` 标签、错误图片扩展名 | 改写（默认，可 `--dry-run`） |
-| `scripts/init.py` | 生成完整 VitePress 项目（含死链改写、多级目录、主题） | 只写新目录 |
+| `scripts/init.py` | 生成完整文档站项目（含死链改写、多级目录、主题） | 只写新目录 |
 | `scripts/profile.py` | 部署配置档管理（`path/show/check/set/list/bind/cache/wizard`） | 写 `~/.workbuddy/deploy-profiles/` 或站点 `.deploy-local.yml` |
 | `assets/build.sh` | 一键入口：扫描 → 生成 → 装依赖 → 构建 → 预览 | 写输出目录 |
 | `assets/deploy.sh` | 构建 + 打包上传 + 远程解压 + 校验 | 写本地临时包 |

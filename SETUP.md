@@ -31,7 +31,7 @@ python3 scripts/_env.py
 装好之后，把一键入口复制到你的 Markdown 目录：
 
 ```bash
-cp ~/.workbuddy/skills/md-to-vitepress/assets/build.sh ~/你的md目录/
+cp ~/.workbuddy/skills/md2website/assets/build.sh ~/你的md目录/
 ```
 
 然后在 **Finder 里双击** `build.sh`（或在终端里 `./build.sh`），它会自动完成：
@@ -72,12 +72,12 @@ cp ~/.workbuddy/skills/md-to-vitepress/assets/build.sh ~/你的md目录/
 ### 第一步：安装
 
 ```bash
-git clone <仓库地址> md-to-vitepress
-cd md-to-vitepress
+git clone <仓库地址> md2website
+cd md2website
 ./install.sh
 ```
 
-默认装到 `~/.workbuddy/skills/md-to-vitepress`。改位置用 `./install.sh --dir ~/my-skills/md-to-vitepress`。
+默认装到 `~/.workbuddy/skills/md2website`。改位置用 `./install.sh --dir ~/my-skills/md2website`。
 
 只检查环境不安装：`./install.sh --check`
 
@@ -86,7 +86,7 @@ cd md-to-vitepress
 ### 第二步：生成站点
 
 ```bash
-SKILL=~/.workbuddy/skills/md-to-vitepress
+SKILL=~/.workbuddy/skills/md2website
 
 # 先看看源文档有什么坑（只读，不改文件）
 python3 $SKILL/scripts/scan.py ~/你的md目录

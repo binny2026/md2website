@@ -113,7 +113,7 @@ def write_profile(name, values):
     lines = [
         '# ============================================================',
         f'# 部署配置档：{sanitize(name)}',
-        '# 由 md-to-vitepress skill 生成，权限 600，切勿提交到仓库',
+        '# 由 md2website skill 生成，权限 600，切勿提交到仓库',
         '# ============================================================',
         '',
     ]
@@ -268,7 +268,7 @@ def _write_local_yml(project, data, source):
     """把配置写为站点本地 yml（.deploy-local.yml，权限 600，不上传服务器）"""
     lines = [
         f'# 站点本地部署配置（来源：{source}，权限 600，不上传服务器，勿提交 git）',
-        '# 由 md-to-vitepress skill 生成',
+        '# 由 md2website skill 生成',
     ]
     for key, _desc, _req in FIELDS:
         val = data.get(key, DEFAULTS.get(key, ''))

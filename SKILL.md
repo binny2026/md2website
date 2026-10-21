@@ -1,9 +1,9 @@
 ---
-name: md-to-vitepress
-description: "把一个 Markdown 文档项目（多章节教程、笔记、课件、手册）改造为 VitePress 静态文档站，并支持一键部署到远程服务器。自动识别章节目录、生成侧边栏导航/首页/全文搜索/代码高亮/图片放大，自动检测并修复会导致 Vue 编译器报错的语法冲突。当用户说「把 md 转成 html」「md 项目改造成 vitepress」「课件/笔记/文档做成网站」「生成文档站」「部署文档站到服务器」时使用。"
+name: md2website
+description: "把一个 Markdown 文档项目（多章节教程、笔记、课件、手册）改造为静态文档站，并支持一键部署到远程服务器。自动识别章节目录、生成侧边栏导航/首页/全文搜索/代码高亮/图片放大，自动检测并修复会导致 Vue 编译器报错的语法冲突。当用户说「把 md 转成 html」「md 项目做成文档站」「课件/笔记/文档做成网站」「生成文档站」「部署文档站到服务器」时使用。"
 ---
 
-# Markdown → VitePress 文档站
+# Markdown → 文档站
 
 把一堆 Markdown 变成一个可浏览的静态文档网站：左侧章节导航、页面内目录、全文搜索、代码复制、深浅色主题、图片放大，且能一键部署到服务器。
 
@@ -11,7 +11,7 @@ description: "把一个 Markdown 文档项目（多章节教程、笔记、课�
 
 ## 为什么需要专门的 skill
 
-Markdown 课件/笔记直接用 VitePress 构建几乎必然失败，原因是 **VitePress 把每个 `.md` 当作 Vue 单文件组件编译**，正文里这些写法会被 Vue 误判：
+Markdown 课件/笔记直接构建几乎必然失败，原因是 **站点引擎把每个 `.md` 当作 Vue 单文件组件编译**，正文里这些写法会被 Vue 误判：
 
 | 写法 | Vue 的反应 | 后果 |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ Markdown 课件/笔记直接用 VitePress 构建几乎必然失败，原因是 *
 脚本**不依赖任何写死的解释器路径**，全部运行时探测：
 
 ```
-SKILL_DIR = $HOME/.workbuddy/skills/md-to-vitepress   （install.sh 可改位置）
+SKILL_DIR = $HOME/.workbuddy/skills/md2website   （install.sh 可改位置）
 PY        = python3                              （当前解释器即可，需 3.8+）
 NODE      = 自动探测 PATH → nvm → homebrew → /usr/bin（需 18+）
 依赖      = 项目内 npm install，首次约 1-3 分钟
@@ -44,7 +44,7 @@ python3 $SKILL_DIR/scripts/_env.py
 脚本清单：
 
 - `scripts/_env.py` — 环境探测（Python / Node 版本、安装指引）
-- `scripts/init.py` — 扫描源目录，生成完整 VitePress 项目，并自动修复语法冲突、改写跨章节死链、为合集/多级目录生成分组侧边栏
+- `scripts/init.py` — 扫描源目录，生成完整文档站项目，并自动修复语法冲突、改写跨章节死链、为合集/多级目录生成分组侧边栏
 - `scripts/scan.py` — 扫描语法冲突与缺失图片
 - `scripts/fix.py` — 修复 `<img>` 标签与错误图片路径
 - `scripts/profile.py` — 部署配置档管理（set/bind/cache/list/show/check）
@@ -80,7 +80,7 @@ python3 "$SKILL_DIR/scripts/_env.py"        # 确认 Node 18+ 可用
 python3 "$SKILL_DIR/scripts/scan.py" "<md源目录>"
 ```
 
-其中 `SKILL_DIR=$HOME/.workbuddy/skills/md-to-vitepress`（若用 `install.sh --dir` 装到别处，以实际位置为准）。
+其中 `SKILL_DIR=$HOME/.workbuddy/skills/md2website`（若用 `install.sh --dir` 装到别处，以实际位置为准）。
 输出会列出阻断项（blocker）与警告（warn）。**先看清楚再动手**，把数量报给用户。
 
 #### 2. 初始化项目
@@ -94,7 +94,7 @@ python3 "$SKILL_DIR"/scripts/init.py "<md源目录>" \
 ```
 
 - `--out` 必须是不存在的路径（脚本拒绝覆盖已有目录）
-- 未指定 `--out` 时默认 `./outputs/vitepress-site`
+- 未指定 `--out` 时默认 `./outputs/md2website-site`
 - `--name` 可选：站点标识名（用于 `package.json` name、部署包名），默认从标题转换
 - 脚本自动：按子目录递归识别章节、取每个目录首个 H1 作标题、把主文档改名为 `index.md`、复制所有图片、生成导航/首页/主题/部署配置/`.gitignore`；无「同名/index/README 主文档」的多文件目录识别为**合集目录**（侧边栏展开逐篇导航），子目录递归成**多级目录**；正文指向源 `.md` 的链接自动改写为站点 URL；默认生成**科技感双主题**样式
 
