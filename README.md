@@ -31,8 +31,8 @@ python3 scripts/fix.py  "<产物docs目录>" --dry-run   # 预览修复
 | `_env.py` | 探测 Python / Node，给出安装指引 | 只读 |
 | `scan.py` | 检测 Vue 语法冲突、缺失图片 | 只读 |
 | `fix.py` | 修复 `<img>` 标签、错误图片扩展名 | 改写（默认，可 `--dry-run`） |
-| `init.py` | 从 md 目录生成完整 VitePress 项目（含语法修复、死链改写、合集目录分组导航） | 只写新目录 |
-| `profile.py` | 管理部署配置档（多项目隔离） | 写 `~/.workbuddy/deploy-profiles/` |
+| `init.py` | 从 md 目录生成完整 VitePress 项目（含语法修复、死链改写、合集/多级目录分组导航、科技感主题） | 只写新目录 |
+| `profile.py` | 管理部署配置档（多项目隔离，可 cache 到站点本地） | 写 `~/.workbuddy/deploy-profiles/` |
 | `assets/build.sh` | 一键入口：扫描→生成→装依赖→构建→预览 | 写输出目录 |
 | `assets/deploy.sh` | 构建 + 打包上传 + 远程解压 | 写本地临时包 |
 
@@ -46,9 +46,10 @@ python3 scripts/profile.py list                        # 列出所有配置档
 python3 scripts/profile.py set --name doc HOST=... USER=root REMOTE_DIR=...
 python3 scripts/profile.py bind --project . --name doc  # 项目绑定
 python3 scripts/profile.py check                        # 检查缺项
+python3 scripts/profile.py cache --project .            # 缓存配置到站点本地 .deploy-local.conf（不上传）
 ```
 
-`deploy.sh` 用配置档（`--profile` > 项目绑定 > 项目内 `deploy.conf` 旧版兼容）。
+`deploy.sh` 用配置档（`--profile` > 站点本地 `.deploy-local.conf` > 项目绑定 > 项目内 `deploy.conf` 旧版兼容）。
 
 ## 依赖
 

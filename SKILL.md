@@ -44,10 +44,10 @@ python3 $SKILL_DIR/scripts/_env.py
 脚本清单：
 
 - `scripts/_env.py` — 环境探测（Python / Node 版本、安装指引）
-- `scripts/init.py` — 扫描源目录，生成完整 VitePress 项目，并自动修复语法冲突、改写跨章节死链、为合集目录生成分组侧边栏
+- `scripts/init.py` — 扫描源目录，生成完整 VitePress 项目，并自动修复语法冲突、改写跨章节死链、为合集/多级目录生成分组侧边栏
 - `scripts/scan.py` — 扫描语法冲突与缺失图片
 - `scripts/fix.py` — 修复 `<img>` 标签与错误图片路径
-- `scripts/profile.py` — 部署配置档管理
+- `scripts/profile.py` — 部署配置档管理（set/bind/cache/list/show/check）
 - `assets/deploy.sh` — 一键部署脚本（init 时复制到项目里）
 
 
@@ -89,12 +89,14 @@ python3 "$SKILL_DIR/scripts/scan.py" "<md源目录>"
 python3 "$SKILL_DIR"/scripts/init.py "<md源目录>" \
     --out "<输出目录>" \
     --title "站点标题" \
-    --subtitle "副标题"
+    --subtitle "副标题" \
+    --name "站点名"
 ```
 
 - `--out` 必须是不存在的路径（脚本拒绝覆盖已有目录）
 - 未指定 `--out` 时默认 `./outputs/vitepress-site`
-- 脚本自动：按子目录识别章节、取每个目录首个 H1 作标题、把主文档改名为 `index.md`、复制所有图片、生成导航/首页/主题/部署配置；无「同名/index/README 主文档」的多文件目录会识别为**合集目录**（侧边栏展开逐篇导航），正文指向源 `.md` 的链接自动改写为站点 URL
+- `--name` 可选：站点标识名（用于 `package.json` name、部署包名），默认从标题转换
+- 脚本自动：按子目录递归识别章节、取每个目录首个 H1 作标题、把主文档改名为 `index.md`、复制所有图片、生成导航/首页/主题/部署配置/`.gitignore`；无「同名/index/README 主文档」的多文件目录识别为**合集目录**（侧边栏展开逐篇导航），子目录递归成**多级目录**；正文指向源 `.md` 的链接自动改写为站点 URL；默认生成**科技感双主题**样式
 
 输出会逐章打印 `✓ 01 标题 → /slug/ (md N, img M)`，**核对数量和图片数对不对**。
 
@@ -174,6 +176,14 @@ python3 "$SKILL_DIR"/scripts/profile.py bind --project "<输出目录>" --name <
 
 5. 配置档名默认取项目目录名（`init.py` 已在 `DEPLOY.md` 里写好建议名），用户没指定就用它。
 
+**可选**：把配置档内容缓存到站点本地（独立维护、不上传服务器）：
+
+```bash
+python3 "$SKILL_DIR"/scripts/profile.py cache --project "<输出目录>"
+```
+
+缓存后 `deploy.sh` 优先用站点本地的 `.deploy-local.conf`（已加入 `.gitignore`，不会误提交）。
+
 **绝不把密码写进配置文件**，只记 SSH 密钥路径。需要密码时提示用户执行 `ssh-copy-id`。
 
 #### 8. 一键部署
@@ -222,6 +232,7 @@ python3 "$SKILL_DIR"/scripts/profile.py bind --project "<输出目录>" --name <
 - 源目录下**含 `.md` 的子目录** → 各算一个章节
 - 目录内**主文档**优先级：`与目录同名.md` > `index.md` > `README.md` > 第一个 md
 - 目录内**无**同名/index/README 主文档且有多篇 md → 识别为**合集目录**：侧边栏生成可折叠分组、逐篇列出（分组标题用目录名，每篇标题取各自首个 H1）
+- 目录内的**子目录**（含 md）→ 递归识别为**多级目录**：侧边栏生成嵌套分组（子目录标题用目录名，子目录主文档作为目录入口）
 - 章节标题取主文档**第一个 H1**，没有则用目录名
 - 根目录散装的 md → 平铺成单页（`readme/index` 跳过）
 - URL slug 保留中文，只清洗空格和特殊字符
