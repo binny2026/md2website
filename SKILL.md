@@ -29,7 +29,8 @@ Markdown 课件/笔记直接构建几乎必然失败，原因是 **站点引擎�
 脚本**不依赖任何写死的解释器路径**，全部运行时探测：
 
 ```
-SKILL_DIR = $HOME/.workbuddy/skills/md2website   （install.sh 可改位置）
+SKILL_DIR = 按序探测 ~/.workbuddy、~/.trae-cn、~/.trae、~/.codex、~/.claude 下的 skills/md2website
+            （install.sh 支持交互多选，可同时装到多个 Agent 目录）
 PY        = python3                              （当前解释器即可，需 3.8+）
 NODE      = 自动探测 PATH → nvm → homebrew → /usr/bin（需 18+）
 依赖      = 项目内 npm install，首次约 1-3 分钟
@@ -80,7 +81,7 @@ python3 "$SKILL_DIR/scripts/_env.py"        # 确认 Node 18+ 可用
 python3 "$SKILL_DIR/scripts/scan.py" "<md源目录>"
 ```
 
-其中 `SKILL_DIR=$HOME/.workbuddy/skills/md2website`（若用 `install.sh --dir` 装到别处，以实际位置为准）。
+其中 `SKILL_DIR` 由 5 个 Agent 目录按序探测：`~/.workbuddy`、`~/.trae-cn`、`~/.trae`、`~/.codex`、`~/.claude` 下的 `skills/md2website`；`build.sh` 与 `deploy.sh` 使用同一顺序。
 输出会列出阻断项（blocker）与警告（warn）。**先看清楚再动手**，把数量报给用户。
 
 #### 2. 初始化项目

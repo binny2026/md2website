@@ -37,7 +37,12 @@ DIST_DIR="$SCRIPT_DIR/docs/.vitepress/dist"
 # 查找 skill 本体：缺配置时用它启动交互式向导
 SKILL_DIR="${MD2VP_SKILL_DIR:-}"
 if [ -z "$SKILL_DIR" ]; then
-  for cand in "$HOME/.workbuddy/skills/md2website" "$HOME/.trae-cn/skills/md2website"; do
+  for cand in \
+    "$HOME/.workbuddy/skills/md2website" \
+    "$HOME/.trae-cn/skills/md2website" \
+    "$HOME/.trae/skills/md2website" \
+    "$HOME/.codex/skills/md2website" \
+    "$HOME/.claude/skills/md2website"; do
     if [ -f "$cand/scripts/profile.py" ]; then
       SKILL_DIR="$cand"
       break

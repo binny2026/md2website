@@ -45,7 +45,13 @@ find_skill() {
 }
 SKILL_DIR="$(find_skill "$SCRIPT_DIR" || true)"
 if [ -z "$SKILL_DIR" ]; then
-  for cand in "$HOME/.workbuddy/skills/$NAME" "$SCRIPT_DIR/../$NAME"; do
+  for cand in \
+    "$HOME/.workbuddy/skills/$NAME" \
+    "$HOME/.trae-cn/skills/$NAME" \
+    "$HOME/.trae/skills/$NAME" \
+    "$HOME/.codex/skills/$NAME" \
+    "$HOME/.claude/skills/$NAME" \
+    "$SCRIPT_DIR/../$NAME"; do
     [ -d "$cand" ] && [ -f "$cand/scripts/init.py" ] && { SKILL_DIR="$(cd "$cand" && pwd)"; break; }
   done
 fi

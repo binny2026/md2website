@@ -49,13 +49,44 @@ cd md2website
 ./install.sh
 ```
 
-默认安装到 `~/.workbuddy/skills/md2website`。
+脚本会先探测本机已安装的桌面 Agent，再让你选择安装到哪些目录：
+
+```
+  编号  Agent         路径                         状态
+   1    Trae CN       ~/.trae-cn/skills              可安装
+   2    Trae          ~/.trae/skills                 未安装该 Agent
+   3    Codex         ~/.codex/skills                可安装
+   4    Claude Code   ~/.claude/skills               未安装该 Agent
+   5    WorkBuddy     ~/.workbuddy/skills            可安装
+   6    Custom Path   （安装时输入绝对路径）
+
+选择安装目标 [1-6，空格或逗号分隔，a=全选，q=取消]（回车默认: 1 3 5）:
+```
+
+- 支持多选：`1 3 5`、`1,3,5` 或范围 `1-3`
+- `a` = 全部安装；`q` = 取消
+- **回车 = 更新已安装过的目录**；首次安装（没有任何副本）时默认全部可安装目录
+- 未检测到 `skills` 目录的 Agent 会提示并跳过，不会替你在机器上创建目录
+- 每个选中的目录各放一份完整 skill，互不影响
+
+非交互场景（CI、管道、`sh script.sh`）不传参数时，退回旧行为，安装到默认目录
+`~/.workbuddy/skills/md2website`。
+
+其余参数：
+
+```bash
+./install.sh --all              # 安装到所有检测到的 Agent，不交互
+./install.sh --list             # 只列出检测结果，不安装
+./install.sh --dir <路径>        # 安装到指定目录，可重复传多个
+./install.sh --yes              # 跳过安装前的确认
+```
+
+安装完成会打印实际位置。**下文示例里的 `~/.workbuddy/skills/md2website` 请替换成你自己的安装路径。**
 
 装好后，用一个真实目录从零跑一遍（复制即可执行）：
 
 ```bash
-# 1) 安装（上一步已完成）
-./install.sh
+# 1) 安装（见上一节，已在上一步完成）
 
 # 2) 准备一个 Markdown 目录，已有文档就跳过
 mkdir -p ~/notes/demo/01-基础
@@ -111,24 +142,30 @@ python3 ~/.workbuddy/skills/md2website/scripts/profile.py wizard --project "$(pw
 
 ```bash
 ./install.sh --dir ~/my-skills/md2website
+./install.sh --dir ~/skills-a/md2website --dir ~/skills-b/md2website   # 多个目录
 ```
 
-安装到别处时，把下文命令里的 `SKILL` 换成实际路径。
+`--dir` 传完整的目标目录，可重复；传了就不再进入交互选择。
+
+安装到别处时，把下文命令里的 `~/.workbuddy/skills/md2website` 换成实际路径。
 
 ### 安装前后的检查
 
 ```bash
 ./install.sh --check     # 只检查环境（Python / Node 版本），不安装
+./install.sh --list      # 列出检测到的 Agent 与安装状态
 python3 ~/.workbuddy/skills/md2website/scripts/_env.py   # 安装后再自检一次
 ```
 
 ### 卸载
 
 ```bash
-./install.sh --uninstall                        # 当前目录是安装副本时
-./install.sh --uninstall --dir ~/.workbuddy/skills/md2website   # 显式指定
+./install.sh --uninstall                        # 当前目录是安装副本时，只删这一份
+./install.sh --uninstall --dir ~/.workbuddy/skills/md2website   # 显式指定单个目录
+./install.sh --uninstall --all                  # 删除所有已检测到的 Agent 副本
 ```
 
+`--uninstall --all` 只遍历 5 个已知 Agent 目录；用 `--dir` 装到别处的副本需要显式指定路径。
 卸载不会删除部署配置档（`~/.workbuddy/deploy-profiles/`），需要时手动清理。
 
 > 仓库里的 `install.sh` 只复制 `SKILL.md`、`scripts/`、`assets/`、文档等必要文件，不会带上 `.git` 与临时产物。

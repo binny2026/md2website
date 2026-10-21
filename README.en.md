@@ -29,7 +29,45 @@ cd md2website
 ./install.sh
 ```
 
-Installs to `~/.workbuddy/skills/md2website` by default. Use `--dir <path>` to change, `--check` to only verify the environment, `--uninstall` to remove.
+`install.sh` detects installed desktop agents and lets you pick one or more targets:
+
+```
+  1  Trae CN      ~/.trae-cn/skills
+  2  Trae         ~/.trae/skills
+  3  Codex        ~/.codex/skills
+  4  Claude Code  ~/.claude/skills
+  5  WorkBuddy    ~/.workbuddy/skills
+  6  Custom Path
+```
+
+- Multi-select with `1 3 5`, `1,3,5` or a range such as `1-3`; `a` = all, `q` = cancel.
+- **Enter** updates the directories that are already installed (on a fresh machine it defaults to every usable directory).
+- Agents whose `skills` directory does not exist are skipped — the installer never creates directories behind your back.
+- Each selected directory receives a full copy of the skill.
+
+Non-interactive runs (CI, pipes) without arguments fall back to `~/.workbuddy/skills/md2website`.
+
+Other flags:
+
+```bash
+./install.sh --all              # install into every detected agent, no prompt
+./install.sh --list             # show detected agents and status only
+./install.sh --dir <path>       # explicit target, repeatable
+./install.sh --yes              # skip the confirmation prompt
+./install.sh --check            # verify the environment only
+```
+
+Uninstall:
+
+```bash
+./install.sh --uninstall                       # remove the current copy
+./install.sh --uninstall --all                 # remove every detected copy
+./install.sh --uninstall --dir <path>          # remove one explicit directory
+```
+
+`--uninstall --all` only scans the five known agent directories; custom `--dir` copies must be removed explicitly. Deployment profiles in `~/.workbuddy/deploy-profiles/` are never deleted.
+
+The examples below use `~/.workbuddy/skills/md2website`; replace it with your actual install path (printed at the end of installation).
 
 Run a quick self-check anytime:
 

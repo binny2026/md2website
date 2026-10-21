@@ -77,9 +77,32 @@ cd md2website
 ./install.sh
 ```
 
-默认装到 `~/.workbuddy/skills/md2website`。改位置用 `./install.sh --dir ~/my-skills/md2website`。
+安装脚本会探测本机已安装的桌面 Agent，让你多选安装目标：
 
-只检查环境不安装：`./install.sh --check`
+```
+  1  Trae CN      ~/.trae-cn/skills
+  2  Trae         ~/.trae/skills
+  3  Codex        ~/.codex/skills
+  4  Claude Code  ~/.claude/skills
+  5  WorkBuddy    ~/.workbuddy/skills
+  6  Custom Path
+```
+
+输入 `1 3 5`、`1,3,5` 或 `1-3` 选择多个；`a` 全选，`q` 取消。
+回车 = 更新已安装过的目录；首次安装则默认全部可安装目录。
+未检测到 `skills` 目录的 Agent 会自动跳过，不会创建目录。
+
+其他用法：
+
+```bash
+./install.sh --all                  # 装到所有检测到的 Agent
+./install.sh --list                 # 只看检测结果
+./install.sh --dir ~/my-skills/md2website   # 指定目录（可重复传）
+./install.sh --check                # 只检查环境
+```
+
+非交互环境不传参数时，仍装到 `~/.workbuddy/skills/md2website`。
+下文命令里的 `~/.workbuddy/skills/md2website` 请替换成你的实际安装路径（安装结束会打印）。
 
 ---
 
