@@ -26,31 +26,18 @@ LOCAL_YML = '.deploy-local.yml'
 # 字段定义：(键, 说明, 是否必填)
 FIELDS = [
     ('HOST', '服务器主机（域名或 IP）', True),
-    ('PORT', 'SSH 端口', False),
+    ('PORT', 'SSH 端口', True),
     ('USER', '登录账号', True),
     ('REMOTE_DIR', '远程部署目录（绝对路径）', True),
     ('SSH_KEY', 'SSH 私钥路径', False),
     ('PASSWORD', '登录密码（留空则用 SSH 密钥）', False),
-    ('SITE_BASE', '站点根路径（/ 或 /子目录/）', False),
+    ('SITE_BASE', '站点根路径（/ 或 /子目录/）', True),
     ('CLEAN_MODE', '清理方式 manifest|none|all', False),
     ('BUILD_BEFORE_DEPLOY', '部署前是否构建 true|false', False),
     ('REMOTE_TMP', '远程临时目录', False),
     ('DIST_NAME', '产物文件夹名（上传时）', False),
     ('UPLOAD_WITH_DIR', '是否带文件夹一起上传 true|false', False),
 ]
-
-DEFAULTS = {
-    'PORT': '22',
-    'USER': 'root',
-    'SSH_KEY': '$HOME/.ssh/id_rsa',
-    'PASSWORD': '',
-    'SITE_BASE': '/',
-    'CLEAN_MODE': 'manifest',
-    'BUILD_BEFORE_DEPLOY': 'true',
-    'REMOTE_TMP': '/tmp',
-    'DIST_NAME': 'dist',
-    'UPLOAD_WITH_DIR': 'false',
-}
 
 REQUIRED = [k for k, _, req in FIELDS if req]
 DESCRIBE = {k: d for k, d, _ in FIELDS}
@@ -118,11 +105,11 @@ def write_profile(name, values):
         '',
     ]
     for key, desc, _ in FIELDS:
-        val = values.get(key, DEFAULTS.get(key, ''))
-        if key in values or key in DEFAULTS:
-            lines.append(f'# {desc}')
-            lines.append(f'{key}="{val}"')
-            lines.append('')
+        if key not in values:
+            continue
+        lines.append(f'# {desc}')
+        lines.append(f'{key}="{values[key]}"')
+        lines.append('')
     with open(path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))
     try:
@@ -176,7 +163,7 @@ def cmd_show(args):
         print('（尚未创建）')
         return 1
     for k, desc, _ in FIELDS:
-        print(f'  {k:<20} {data.get(k, DEFAULTS.get(k, "<未设置>"))}')
+        print(f'  {k:<20} {data.get(k, "<未设置>")}')
     return 0
 
 
@@ -214,9 +201,6 @@ def cmd_set(args):
             print(f'未知字段: {k}\n可用字段: {", ".join(DESCRIBE)}', file=sys.stderr)
             return 1
         data[k] = v.strip()
-    # 补默认值
-    for k, v in DEFAULTS.items():
-        data.setdefault(k, v)
     path = write_profile(name, data)
     print(f'已写入: {path}')
     miss = missing_of(data)
@@ -271,7 +255,9 @@ def _write_local_yml(project, data, source):
         '# 由 md2website skill 生成',
     ]
     for key, _desc, _req in FIELDS:
-        val = data.get(key, DEFAULTS.get(key, ''))
+        val = data.get(key, '')
+        if val == '':
+            continue
         yml_key = FIELD_YML.get(key, key.lower())
         lines.append(f'{yml_key}: {val}')
     local = os.path.join(project, LOCAL_YML)
@@ -308,25 +294,52 @@ def cmd_cache(args):
 
 
 def cmd_wizard(args):
-    """交互式引导配置，写入站点本地 .deploy-local.yml"""
+    """交互式引导配置，写入站点本地 .deploy-local.yml（无预置默认值）"""
     project = os.path.abspath(args.project)
     if not os.path.isdir(project):
         print(f'目录不存在: {project}', file=sys.stderr)
         return 1
-    print('开始配置站点部署信息（直接回车使用方括号内默认值）')
-    host = input('服务器主机（域名或 IP）: ').strip()
+
+    print('开始配置站点部署信息（没有预置默认值，必填项不能留空）')
+
+    host = input('服务器主机（域名或 IP，必填）: ').strip()
     if not host:
         print('未输入主机，已取消', file=sys.stderr)
         return 1
-    user = input('登录账号 [root]: ').strip() or 'root'
-    password = input('登录密码（留空则用 SSH 密钥）: ').strip()
-    ssh_key = input('SSH 私钥路径 [$HOME/.ssh/id_ed25519]: ').strip() or '$HOME/.ssh/id_ed25519'
-    remote_dir = input('远程部署目录（绝对路径）: ').strip()
+
+    user = input('登录账号（必填）: ').strip()
+    if not user:
+        print('未输入登录账号，已取消', file=sys.stderr)
+        return 1
+
+    password = input('登录密码（密码登录填写，留空则用 SSH 密钥）: ').strip()
+    ssh_key = input('SSH 私钥路径（密钥登录填写，密码登录留空）: ').strip()
+    if not password and not ssh_key:
+        print('登录密码与 SSH 私钥至少填写一项，已取消', file=sys.stderr)
+        return 1
+    if ssh_key.startswith('~/'):
+        ssh_key = '$HOME/' + ssh_key[2:]
+
+    remote_dir = input('远程部署目录（绝对路径，必填）: ').strip()
     if not remote_dir:
         print('未输入远程目录，已取消', file=sys.stderr)
         return 1
-    port = input('SSH 端口 [22]: ').strip() or '22'
-    site_base = input('站点根路径 [/]: ').strip() or '/'
+    if not remote_dir.startswith('/'):
+        print('远程目录必须是绝对路径，已取消', file=sys.stderr)
+        return 1
+
+    port = input('SSH 端口（必填，例如 22）: ').strip()
+    if not port.isdigit() or not 1 <= int(port) <= 65535:
+        print('SSH 端口必须是 1-65535 的数字，已取消', file=sys.stderr)
+        return 1
+
+    site_base = input('站点根路径（必填，例如 / 或 /docs/）: ').strip()
+    if not site_base.startswith('/'):
+        print('站点根路径必须以 / 开头，已取消', file=sys.stderr)
+        return 1
+    if not site_base.endswith('/'):
+        site_base += '/'
+
     data = {
         'HOST': host, 'USER': user, 'PASSWORD': password, 'REMOTE_DIR': remote_dir,
         'SSH_KEY': ssh_key, 'PORT': port, 'SITE_BASE': site_base,

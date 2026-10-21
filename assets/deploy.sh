@@ -34,6 +34,17 @@ PROFILE_DIR="${MD2VP_PROFILE_DIR:-$HOME/.workbuddy/deploy-profiles}"
 PROFILE_MARK="$SCRIPT_DIR/.deploy-profile"
 DIST_DIR="$SCRIPT_DIR/docs/.vitepress/dist"
 
+# 查找 skill 本体：缺配置时用它启动交互式向导
+SKILL_DIR="${MD2VP_SKILL_DIR:-}"
+if [ -z "$SKILL_DIR" ]; then
+  for cand in "$HOME/.workbuddy/skills/md2website" "$HOME/.trae-cn/skills/md2website"; do
+    if [ -f "$cand/scripts/profile.py" ]; then
+      SKILL_DIR="$cand"
+      break
+    fi
+  done
+fi
+
 C_RESET=$'\033[0m'; C_INFO=$'\033[36m'; C_OK=$'\033[32m'; C_WARN=$'\033[33m'; C_ERR=$'\033[31m'
 info() { printf '%s==>%s %s\n' "$C_INFO" "$C_RESET" "$*"; }
 ok()   { printf '%s  ✓%s %s\n' "$C_OK" "$C_RESET" "$*"; }
@@ -87,11 +98,19 @@ elif [ -f "$SCRIPT_DIR/deploy.conf" ]; then
   CONF="$SCRIPT_DIR/deploy.conf"
   CONF_SOURCE="项目内 deploy.conf（旧版）"
 else
-  die "未找到部署配置。请先交互式配置（支持账号密码或 SSH 密钥登录）：
-   python3 <skill>/scripts/profile.py wizard --project \"$SCRIPT_DIR\"
-   或任选其一：
-   1) 绑定配置档：python3 <skill>/scripts/profile.py bind --project \"$SCRIPT_DIR\" --name <名字>
-   2) 缓存配置到本地：python3 <skill>/scripts/profile.py cache --project \"$SCRIPT_DIR\""
+  # 没有任何配置：交互终端下直接进入向导，结果写入本站点目录
+  if [ -t 0 ] && [ -n "$SKILL_DIR" ] && [ -f "$SKILL_DIR/scripts/profile.py" ]; then
+    command -v python3 >/dev/null 2>&1 || die "未找到 python3，无法启动配置向导"
+    info "未找到部署配置，进入交互式配置"
+    python3 "$SKILL_DIR/scripts/profile.py" wizard --project "$SCRIPT_DIR" \
+      || die "配置未完成，已中止部署"
+    CONF="$SCRIPT_DIR/.deploy-local.yml"
+    CONF_SOURCE="站点本地配置 .deploy-local.yml"
+  else
+    die "未找到部署配置。请在站点目录执行交互式配置（支持账号密码或 SSH 密钥登录）：
+   python3 ${SKILL_DIR:-<skill>}/scripts/profile.py wizard --project \"$SCRIPT_DIR\"
+   或在生成站点时选择配置服务器；配置只保存在本站点 .deploy-local.yml"
+  fi
 fi
 
 # 去掉行尾注释：仅当 # 前有空白时生效，避免密码里的 # 被误截断
@@ -180,10 +199,11 @@ case "$CONF" in
   *) load_conf "$CONF" ;;
 esac
 
-: "${HOST:?配置缺少 HOST（用 profile.py set 补上）}"
-: "${USER:?配置缺少 USER（用 profile.py set 补上）}"
-: "${REMOTE_DIR:?配置缺少 REMOTE_DIR（用 profile.py set 补上）}"
-PORT="${PORT:-22}"
+: "${HOST:?配置缺少 HOST（用 profile.py wizard 补上）}"
+: "${USER:?配置缺少 USER（用 profile.py wizard 补上）}"
+: "${REMOTE_DIR:?配置缺少 REMOTE_DIR（用 profile.py wizard 补上）}"
+: "${PORT:?配置缺少 PORT（SSH 端口，用 profile.py wizard 补上）}"
+: "${SITE_BASE:?配置缺少 SITE_BASE（站点根路径，用 profile.py wizard 补上）}"
 [ "$REMOTE_DIR" = "/" ] || REMOTE_DIR="${REMOTE_DIR%/}"
 REMOTE_TMP="${REMOTE_TMP:-/tmp}"
 CLEAN_MODE="${CLEAN_MODE:-manifest}"
@@ -222,7 +242,7 @@ unset _rd
 printf '\n%s╭─ 部署目标 ───────────────────────────────────╮%s\n' "$C_INFO" "$C_RESET"
 printf '  %-10s %s@%s:%s\n' "服务器" "$USER" "$HOST" "$PORT"
 printf '  %-10s %s\n' "目录" "$REMOTE_DIR"
-printf '  %-10s %s\n' "站点根路径" "${SITE_BASE:-/}"
+printf '  %-10s %s\n' "站点根路径" "$SITE_BASE"
 printf '  %-10s %s\n' "清理方式" "$CLEAN_MODE"
 printf '  %-10s %s\n' "配置来源" "$CONF_SOURCE"
 printf '%s╰──────────────────────────────────────────────╯%s\n\n' "$C_INFO" "$C_RESET"

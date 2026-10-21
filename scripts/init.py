@@ -534,58 +534,50 @@ docs/.vitepress/cache/
 
 DEPLOY_README = '''# 部署配置说明
 
-本项目的服务器信息**不存在于项目内**，统一存放在：
-
-    ~/.workbuddy/deploy-profiles/<配置档名>.conf
-
-项目里只保留一个 `.deploy-profile` 文件记录用哪个配置档（可安全提交到仓库）。
+服务器信息只保存在本站点目录的 `.deploy-local.yml`（权限 600，已被 `.gitignore` 忽略），
+不会提交到仓库，也不会随站点上传到服务器。
 
 ## 首次配置
 
-    PY=python3
-    SKILL=~/.workbuddy/skills/md2website
+生成站点时如果选择了配置服务器，`.deploy-local.yml` 已经存在；否则在站点目录执行：
 
-    # 1) 创建配置档
-    $PY $SKILL/scripts/profile.py set --name @@NAME@@ \\
-        HOST="doc.example.com" \\
-        USER="root" \\
-        REMOTE_DIR="/www/wwwroot/doc.example.com" \\
-        SITE_BASE="/"
+    python3 ~/.workbuddy/skills/md2website/scripts/profile.py wizard --project "$(pwd)"
 
-    # 2) 绑定到本项目
-    $PY $SKILL/scripts/profile.py bind --project "$(pwd)" --name @@NAME@@
+也可以直接执行 `./deploy.sh`，未找到配置时会自动进入同一个向导。
 
-    # 3) 验证
-    $PY $SKILL/scripts/profile.py check
+向导没有预置默认值：主机、登录账号、SSH 端口、远程目录、站点根路径都需要手动填写；
+密码与 SSH 私钥至少填写一项。
+
+## 查看当前配置
+
+    python3 ~/.workbuddy/skills/md2website/scripts/profile.py show
     ./deploy.sh --dry-run
 
-## 常用命令
+## 字段说明
 
-    $PY $SKILL/scripts/profile.py list          # 列出所有配置档
-    $PY $SKILL/scripts/profile.py show          # 查看本项目配置
-    $PY $SKILL/scripts/profile.py set --name @@NAME@@ KEY=VALUE   # 改某一项
-    $PY $SKILL/scripts/profile.py cache --project "$(pwd)"   # 缓存配置到站点本地 .deploy-local.yml（不上传服务器）
-
-## 可选字段
-
-| 字段 | 默认值 | 说明 |
+| 字段 | 是否必填 | 说明 |
 | --- | --- | --- |
-| HOST | 必填 | 服务器域名或 IP |
-| USER | 必填 | 登录账号 |
-| REMOTE_DIR | 必填 | 远程部署目录，绝对路径 |
-| PORT | 22 | SSH 端口 |
-| SSH_KEY | $HOME/.ssh/id_rsa | 私钥路径 |
-| SITE_BASE | / | 站点根路径，子目录部署填 /docs/ |
-| CLEAN_MODE | manifest | 清理方式：manifest 只清上次部署的文件；all 清空目录（保留 .user.ini）；none 不清理 |
-| BUILD_BEFORE_DEPLOY | true | 部署前是否构建 |
-| REMOTE_TMP | /tmp | 远程临时目录 |
-| DIST_NAME | dist | 产物文件夹名（上传时） |
-| UPLOAD_WITH_DIR | false | 是否带文件夹一起上传 true / false |
+| HOST | 必填 | 服务器域名或 IP，不要带协议、端口或路径 |
+| USER | 必填 | 登录账号，建议使用只对远程目录有写权限的账号 |
+| PORT | 必填 | SSH 端口，无默认值，例如 22 |
+| REMOTE_DIR | 必填 | 远程部署目录，绝对路径，必须是站点专属目录 |
+| SSH_KEY | 密码与私钥二选一 | 私钥路径，支持 `$HOME`；密码登录时留空 |
+| PASSWORD | 密码与私钥二选一 | 登录密码；私钥登录时留空 |
+| SITE_BASE | 必填 | 站点根路径，例如 `/` 或 `/docs/`，无默认值 |
+| CLEAN_MODE | 可选 | 清理方式：manifest 只清上次部署的文件；all 清空目录（保留 .user.ini）；none 不清理 |
+| BUILD_BEFORE_DEPLOY | 可选 | 部署前是否构建 |
+| REMOTE_TMP | 可选 | 远程临时目录 |
+| DIST_NAME | 可选 | 产物文件夹名（上传时） |
+| UPLOAD_WITH_DIR | 可选 | 是否带文件夹一起上传 true / false |
 
-## 切换服务器
+## 多站点共用配置（可选）
 
-    ./deploy.sh --profile 另一个配置档名    # 临时切换
-    $PY $SKILL/scripts/profile.py bind --project "$(pwd)" --name 另一个   # 永久切换
+默认每个站点独立配置。确实需要多个站点共用同一台服务器时，才显式创建并绑定配置档：
+
+    python3 ~/.workbuddy/skills/md2website/scripts/profile.py set --name my-server \\
+        HOST="doc.example.com" PORT="22" USER="deploy" \\
+        REMOTE_DIR="/www/wwwroot/doc.example.com" SITE_BASE="/"
+    python3 ~/.workbuddy/skills/md2website/scripts/profile.py bind --project "$(pwd)" --name my-server
 
 ## 安全边界
 

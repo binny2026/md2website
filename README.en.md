@@ -82,26 +82,24 @@ Your source Markdown directory is **never modified** — everything is written t
 
 ## Deployment
 
-Server credentials are **not stored in the project**. Each project keeps a one-line `.deploy-profile` pointing to a profile in `~/.workbuddy/deploy-profiles/` (mode 600), so multiple projects stay isolated and nothing sensitive ends up in git.
+Server credentials are stored **per site** in `.deploy-local.yml` inside the generated site directory (mode 600, ignored by `.gitignore`). Nothing sensitive is committed or uploaded.
 
 ```bash
-# Create a profile
-python3 $SKILL/scripts/profile.py set --name my-doc \
-    HOST="doc.example.com" USER="root" \
-    REMOTE_DIR="/www/wwwroot/doc.example.com" SITE_BASE="/"
+# Generate the site, then configure it interactively
+cd ~/notes/demo-site
+python3 ~/.workbuddy/skills/md2website/scripts/profile.py wizard --project "$(pwd)"
 
-# Bind it to this project
-python3 $SKILL/scripts/profile.py bind --project . --name my-doc
-
-# Verify, then deploy
+# Verify, then deploy (deploy.sh also starts the wizard when no config exists)
 ./deploy.sh --dry-run
 ./deploy.sh
 ```
 
-One-time key setup:
+The wizard has **no prefilled defaults**: host, user, SSH port, remote directory and site base must all be entered explicitly. Provide either a password or an SSH key.
+
+One-time key setup (replace the user and host with your own):
 
 ```bash
-ssh-copy-id -i ~/.ssh/id_rsa.pub root@doc.example.com
+ssh-copy-id -i ~/.ssh/id_ed25519.pub <user>@doc.example.com
 ```
 
 `deploy.sh` builds, packs with tar, uploads via scp, extracts remotely, and cleans only files recorded in the previous deployment manifest — anything else you put on the server is left alone.
@@ -115,7 +113,7 @@ Options: `--profile <name>` (use another server), `--no-build`, `--dry-run`.
 | `scan.py` | Detect Vue syntax conflicts and missing images | No |
 | `fix.py` | Rewrite `<img>` tags, correct image paths | Yes (`--dry-run` to preview) |
 | `init.py` | Generate a complete documentation site project | Only the new output dir |
-| `profile.py` | Manage deployment profiles | `~/.workbuddy/deploy-profiles/` |
+| `profile.py` | Manage per-site config and optional deployment profiles | `.deploy-local.yml` or `~/.workbuddy/deploy-profiles/` |
 | `_env.py` | Environment detection (Python / Node) | No |
 | `assets/build.sh` | One-click entry: scan → generate → install → build → preview | Output dir only |
 | `assets/deploy.sh` | Build, pack, upload, extract | Local temp package |
@@ -126,8 +124,8 @@ Generated assets use absolute paths (`/assets/...`):
 
 | Deployment location | SITE_BASE |
 | --- | --- |
-| `https://doc.example.com/` | `/` (default) |
-| `https://example.com/docs/` | `/docs/` (rebuild required) |
+| `https://doc.example.com/` | `/` (required, no default) |
+| `https://example.com/docs/` | `/docs/` (pass `--base` at generation time) |
 
 Wrong value means pages load but styles and images 404.
 

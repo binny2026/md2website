@@ -48,7 +48,7 @@ cp ~/.workbuddy/skills/md2website/assets/build.sh ~/你的md目录/
 ./build.sh --wizard
 ```
 
-会逐项问你：站点标题、副标题、输出目录（直接回车用默认值）。
+会逐项问你：站点标题、副标题、输出目录；生成后还会询问是否现在配置服务器（可选，可稍后部署时再配）。
 
 其他参数：
 
@@ -122,35 +122,33 @@ npm run build
 
 ### 第三步：部署（可选）
 
-服务器信息**不放在项目里**，统一存在 `~/.workbuddy/deploy-profiles/`，多个项目各一份互不干扰。
+服务器信息默认只保存在当前站点目录的 `.deploy-local.yml`（权限 600，已被 `.gitignore` 忽略），每个站点一份、互不影响。所有字段都没有预置默认值。
 
 ```bash
-# 1. 创建配置档
-python3 $SKILL/scripts/profile.py set --name my-doc \
-    HOST="doc.example.com" \
-    USER="root" \
-    REMOTE_DIR="/www/wwwroot/doc.example.com" \
-    SITE_BASE="/"
+# 1. 交互式配置（也可直接执行 ./deploy.sh，缺配置会自动进入向导）
+python3 $SKILL/scripts/profile.py wizard --project .
 
-# 2. 绑定到项目
-python3 $SKILL/scripts/profile.py bind --project . --name my-doc
-
-# 3. 先测连通性
+# 2. 先测连通性
 ./deploy.sh --dry-run
 
-# 4. 正式部署
+# 3. 正式部署
 ./deploy.sh
 ```
 
-**首次部署前**，把公钥装到服务器（只需一次）：
+**首次部署前**，把公钥装到服务器（只需一次；下面以 ed25519 为例）：
 
 ```bash
-ssh-copy-id -i ~/.ssh/id_rsa.pub root@doc.example.com
+ssh-copy-id -i ~/.ssh/id_ed25519.pub <账号>@doc.example.com
 ```
 
-配置档常用操作：
+多站点需要共用配置时，才显式创建并绑定配置档：
 
 ```bash
+python3 $SKILL/scripts/profile.py set --name my-doc \
+    HOST="doc.example.com" PORT="22" USER="deploy" \
+    REMOTE_DIR="/www/wwwroot/doc.example.com" SITE_BASE="/"
+python3 $SKILL/scripts/profile.py bind --project . --name my-doc
+
 python3 $SKILL/scripts/profile.py list     # 所有配置档
 python3 $SKILL/scripts/profile.py show     # 本项目的配置
 ./deploy.sh --profile other-doc            # 临时换一台部署
@@ -164,8 +162,8 @@ python3 $SKILL/scripts/profile.py show     # 本项目的配置
 
 | 部署位置 | SITE_BASE | 说明 |
 | --- | --- | --- |
-| `https://doc.example.com/` | `/` | 域名根目录，默认 |
-| `https://example.com/docs/` | `/docs/` | 子目录，**改后要重新构建** |
+| `https://doc.example.com/` | `/` | 域名根目录，必填，无默认值 |
+| `https://example.com/docs/` | `/docs/` | 子目录，**需在生成时用 `init.py --base /docs/`，改配置项本身不改变资源路径** |
 
 填错的表现：页面能打开但样式全丢、图片全裂。
 

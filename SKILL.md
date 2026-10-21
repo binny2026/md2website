@@ -143,54 +143,38 @@ PATH=$NODE_BIN:$PATH npm run preview    # http://127.0.0.1:4173
 
 用 curl 验证返回 200 后再用 `present_files` 展示 URL。
 
-#### 7. 配置部署信息（交互式，一次一问）
+#### 7. 配置部署信息（可选，交互式）
 
-**服务器信息不存在项目里**，统一存到 `~/.workbuddy/deploy-profiles/<配置档名>.conf`（权限 600），
-项目内只留一个 `.deploy-profile` 文件记录用哪个配置档（可安全提交）。多个项目各自一份，互不干扰。
+**默认每个站点独立配置**：服务器信息只保存在站点目录的 `.deploy-local.yml`（权限 600，已加入 `.gitignore`），
+不会提交，也不会随站点上传。生成站点时 `build.sh` 会在交互终端询问「是否现在配置服务器」；
+非交互环境自动跳过，首次执行 `deploy.sh` 时若仍无配置，会自动进入同一个向导。
 
-先检查当前项目有没有配好：
+**配置项没有预置默认值**：主机、登录账号、SSH 端口、远程目录、站点根路径都需要用户显式填写；
+密码与 SSH 私钥至少填写一项。
+
+Agent 不应编造主机名、账号或目录，也不要让用户在对话里粘贴密码。推荐让用户在自己的终端执行：
 
 ```bash
-python3 "$SKILL_DIR"/scripts/profile.py check
+cd "<输出目录>"
+python3 "$SKILL_DIR"/scripts/profile.py wizard --project "$(pwd)"
 ```
 
-返回 `OK` 就直接进入第 8 步。返回 `UNBOUND` / `MISSING` / `INCOMPLETE` 时，**必须交互补齐，禁止自己编造主机名或目录**：
-
-1. **一次只问一个问题**，并附上建议答案（推荐值放前面），用选择题/快捷回复形式，不要让用户手敲整段配置。
-2. 必问三项（其余有默认值，用户不提就不问）：
-
-   | 项目 | 问法示例 | 建议答案 |
-   | --- | --- | --- |
-   | 主机 | 部署到哪台服务器？ | 上次用过的 HOST；或「域名根目录 / 子目录」二选一 |
-   | 账号 | 用哪个账号登录？ | `root` |
-   | 目录 | 站点放在服务器哪个绝对路径？ | 借鉴 `/www/wwwroot/<域名>` |
-
-3. **只问一个歧义点**：站点是域名根目录还是子目录（决定 `SITE_BASE`）。这直接影响资源能否加载，必须确认。
-4. 拿到答案后一次写入并绑定：
+只有多个站点确实要共用同一台服务器时，才显式使用配置档（可选）：
 
 ```bash
 python3 "$SKILL_DIR"/scripts/profile.py set --name <配置档名> \
-    HOST="<主机>" USER="<账号>" REMOTE_DIR="<目录>" SITE_BASE="/<子目录>/或/"
+    HOST="<主机>" PORT="<端口>" USER="<账号>" \
+    REMOTE_DIR="<目录>" SITE_BASE="/<子目录>/或/"
 python3 "$SKILL_DIR"/scripts/profile.py bind --project "<输出目录>" --name <配置档名>
 ```
 
-5. 配置档名默认取项目目录名（`init.py` 已在 `DEPLOY.md` 里写好建议名），用户没指定就用它。
-
-**可选**：把配置档内容缓存到站点本地（独立维护、不上传服务器）：
-
-```bash
-python3 "$SKILL_DIR"/scripts/profile.py cache --project "<输出目录>"
-```
-
-缓存后 `deploy.sh` 优先用站点本地的 `.deploy-local.conf`（已加入 `.gitignore`，不会误提交）。
-
-**绝不把密码写进配置文件**，只记 SSH 密钥路径。需要密码时提示用户执行 `ssh-copy-id`。
+配置档同样不自动补默认值，必填项缺失时 `check` 会返回 `INCOMPLETE`。站点本地配置优先于配置档绑定。
 
 #### 8. 一键部署
 
 ```bash
-./deploy.sh                # 用项目绑定的配置档，构建 + 上传
-./deploy.sh --profile X    # 临时换配置档（测另一台服务器时）
+./deploy.sh                # 无配置时自动进入向导，然后构建 + 上传
+./deploy.sh --profile X    # 临时改用指定配置档（多站点共用时）
 ./deploy.sh --no-build     # 跳过构建
 ./deploy.sh --dry-run      # 只测配置与连通性
 ```
@@ -258,8 +242,8 @@ python3 "$SKILL_DIR"/scripts/profile.py cache --project "<输出目录>"
 | 样式全丢、页面裸奔 | `SITE_BASE` 与实际部署路径不符 | 改 `base` 后重新构建 |
 | 双击 `index.html` 打不开内链 | `cleanUrls` 需要 HTTP 服务 | 用 `npm run preview` 或部署到服务器 |
 | 部署后子页面 404、首页/章节首页正常 | nginx 未配 `try_files` 支持 `cleanUrls` | 站点 nginx 加 `location / { try_files $uri $uri/ $uri.html /index.html; }` 后 `nginx -s reload` |
-| `未找到部署配置` | 项目没绑定配置档 | `profile.py bind --project . --name X` |
-| `项目绑定了配置档 X，但文件不存在` | 配置档被删了 | `profile.py set --name X HOST=...` 重建 |
+| `未找到部署配置` | 站点没有 `.deploy-local.yml`，且当前不是交互终端 | 在终端执行 `./deploy.sh` 自动向导，或 `profile.py wizard --project .` |
+| `配置档 X 不存在` | 显式用了 `--profile` 但配置档未创建 | `profile.py set --name X HOST=... PORT=... USER=... REMOTE_DIR=... SITE_BASE=...` |
 | `SSH 连接失败（已禁止交互输入密码）` | 公钥未装到服务器 | 照报错里的 `ssh-copy-id` 命令执行一次 |
 
 ## 交付话术
@@ -267,7 +251,7 @@ python3 "$SKILL_DIR"/scripts/profile.py cache --project "<输出目录>"
 完成后告诉用户：项目路径、页面/图片数量、预览地址、功能清单，以及三个关键区别：
 
 1. **改内容只需 build，加章节要改 config**（否则侧边栏点不到）
-2. **服务器配置在 `~/.workbuddy/deploy-profiles/`，不在项目里**（多项目各一份，不进 git）
-3. **换部署目标用 `bind` 或 `--profile`**，不用手改文件
+2. **服务器配置默认在站点目录的 `.deploy-local.yml`，每个站点一份**（不进 git、不上传）
+3. **需要多站点共用时才用配置档**，换部署目标用 `bind` 或 `--profile`，不用手改文件
 
 不要只说"完成了"。

@@ -6,7 +6,7 @@
 #   放到 Markdown 目录里双击/执行，自动扫描 → 生成站点 → 装依赖 → 构建 → 打开浏览器
 #
 # 交互模式：
-#   ./build.sh --wizard     逐项询问输出位置、站点标题、是否部署
+#   ./build.sh --wizard     逐项询问输出位置、站点标题，并可选择配置服务器
 #
 # 其他：
 #   ./build.sh --dir <md目录>   指定源目录
@@ -180,6 +180,21 @@ info "扫描并生成站点"
   | sed 's/^/  /'
 
 [ -f "$OUT_DIR/DEPLOY.md" ] || die "生成失败，请检查上面的输出"
+
+# ---------- 可选：生成站点时配置服务器 ----------
+# 只在交互终端询问；CI/脚本等非交互场景自动跳过，首次部署时再由 deploy.sh 引导
+if [ -t 0 ] && [ ! -f "$OUT_DIR/.deploy-local.yml" ]; then
+  printf '\n是否现在配置服务器部署信息？（可稍后在站点目录执行 ./deploy.sh 再配置）[y/N]: '
+  read -r CFG_ANSWER || CFG_ANSWER=""
+  case "$CFG_ANSWER" in
+    [yY]*)
+      if "$PY" "$SKILL_DIR/scripts/profile.py" wizard --project "$OUT_DIR"; then
+        ok "服务器配置已保存到 $OUT_DIR/.deploy-local.yml"
+      else
+        warn "服务器配置未完成，可稍后在站点目录执行 ./deploy.sh 重新配置"
+      fi ;;
+  esac
+fi
 
 # ---------- 安装依赖 ----------
 cd "$OUT_DIR"

@@ -68,6 +68,7 @@ cd ~/notes/demo
 
 # 4) 浏览器自动打开 http://127.0.0.1:4173
 #    站点生成在同级目录：~/notes/demo-site/
+#    生成后会询问是否现在配置服务器，选 N 可稍后部署时再配置
 ```
 
 执行过程中会依次看到环境检查、章节识别、生成站点、安装依赖、构建和预览地址：
@@ -97,8 +98,9 @@ cd ~/notes/demo
 
 ```bash
 cd ~/notes/demo-site
-# 交互式填写主机、账号、密码或私钥、远程目录
+# 交互式填写主机、账号、端口、密码或私钥、远程目录、站点根路径（均无默认值）
 python3 ~/.workbuddy/skills/md2website/scripts/profile.py wizard --project "$(pwd)"
+# 也可以直接执行 ./deploy.sh，缺配置会自动进入向导
 ./deploy.sh --dry-run   # 先只检查连通性
 ./deploy.sh             # 构建 + 上传 + 远程解压 + 校验
 ```
@@ -156,7 +158,7 @@ cd ~/你的md目录 && ./build.sh
 
 | 参数 | 作用 |
 | --- | --- |
-| `--wizard` | 交互式询问标题、副标题、输出目录 |
+| `--wizard` | 交互式询问标题、副标题、输出目录，生成后可选配置服务器 |
 | `--dir <路径>` | 指定 Markdown 源目录 |
 | `--out <路径>` | 指定输出目录 |
 | `--title "标题"` | 站点标题 |
@@ -227,26 +229,30 @@ npm run build
 
 ## 部署到服务器
 
-站点目录里已自带 `deploy.sh` 和 `DEPLOY.md`。服务器信息**不存在于项目内**，统一存放在 `~/.workbuddy/deploy-profiles/<配置档名>.conf`（权限 600），项目里只留 `.deploy-profile` 记录用哪个配置档（可安全提交）。
+站点目录里已自带 `deploy.sh` 和 `DEPLOY.md`。服务器信息默认只保存在**当前站点目录**的 `.deploy-local.yml`（权限 600，已被 `.gitignore` 忽略），不会提交，也不会随站点上传。
 
 ### 首次配置（交互式，支持账号密码）
+
+生成站点时会在终端询问「是否现在配置服务器」，选 `y` 立即进入向导；选 `N` 或非交互环境则跳过，之后首次执行 `./deploy.sh` 时会自动进入同一个向导。
 
 ```bash
 cd ~/你的md目录-site
 python3 ~/.workbuddy/skills/md2website/scripts/profile.py wizard --project "$(pwd)"
 ```
 
-会依次询问主机、账号、密码（留空则用 SSH 密钥）、私钥路径、远程目录、端口、站点根路径（仅作记录，不参与构建），结果写入站点本地 `.deploy-local.yml`（权限 600，已被 `.gitignore` 忽略，不会上传服务器）。
+向导**没有预置默认值**：主机、登录账号、SSH 端口、远程目录、站点根路径都需要手动填写；密码与 SSH 私钥至少填一项。结果写入当前站点目录的 `.deploy-local.yml`，每个站点各自一份。
 
-### 首次配置（配置档方式，多项目共用）
+### 首次配置（配置档方式，多项目共用，可选）
+
+默认不需要配置档。只有多个站点要共用同一台服务器时，才显式创建并绑定：
 
 ```bash
 PY=python3
 SKILL=~/.workbuddy/skills/md2website
 
-# 1) 创建配置档
+# 1) 创建配置档（必填项需全部提供，不会自动补默认值）
 $PY $SKILL/scripts/profile.py set --name my-doc \
-    HOST="doc.example.com" USER="root" \
+    HOST="doc.example.com" PORT="22" USER="deploy" \
     REMOTE_DIR="/www/wwwroot/doc.example.com" SITE_BASE="/"
 
 # 2) 项目绑定
@@ -305,8 +311,9 @@ location / {
 
 ### 配置字段
 
-站点本地配置由 `profile.py wizard` 生成，默认路径 `~/你的站点目录/.deploy-local.yml`，权限 `600`。
-也支持 `profile.py set` 建配置档后 `cache` 到本地，或手工编辑该文件。
+站点本地配置由 `profile.py wizard` 生成，路径固定为当前站点目录下的 `.deploy-local.yml`，权限 `600`。
+每个站点一份，互不影响；也支持 `profile.py set` 建配置档后 `cache` 到本地，或手工编辑该文件。
+向导与配置档都**不预置默认值**，必填项必须显式提供。
 
 格式规则（解析器是脚本内置的简易 YAML，不是真正的 YAML 库）：
 
@@ -316,7 +323,7 @@ location / {
 - `$HOME` 会被替换为当前用户家目录，可写 `ssh_key: $HOME/.ssh/id_ed25519`
 - 值不需要加引号；若值首尾都是引号会被去掉，密码本身首尾有引号时不要再加
 - 未知字段会被静默忽略，字段名拼错不会报错，建议改完执行 `./deploy.sh --dry-run` 复核
-- `HOST`、`USER`、`REMOTE_DIR` 三项缺失会直接报错退出
+- `HOST`、`USER`、`REMOTE_DIR`、`PORT`、`SITE_BASE` 五项缺失会直接报错退出
 
 ```yaml
 # 注释可独占一行，也可写在值末尾
@@ -334,25 +341,27 @@ dist_name: dist
 upload_with_dir: false
 ```
 
-最小可用配置（只用 SSH 密钥）：
+最小可用配置（只用 SSH 密钥；五项必填都不能省）：
 
 ```yaml
 host: doc.example.com
+port: 22
 user: deploy
 remote_dir: /www/wwwroot/doc.example.com
 ssh_key: $HOME/.ssh/id_ed25519
+site_base: /
 ```
 
 | 字段 | yml 键 | 必填 | 默认 | 说明 | 备注 |
 | --- | --- | --- | --- | --- | --- |
 | `HOST` | `host` | 是 | — | 服务器域名或 IP | 只填主机名，不要带 `https://`、端口或路径；示例 `doc.example.com` |
-| `USER` | `user` | 是 | — | 登录账号 | 建议使用只对 `REMOTE_DIR` 有写权限的账号，不要用 `root`；向导默认填 `root` |
+| `USER` | `user` | 是 | — | 登录账号 | 必须手动填写，无默认账号；建议使用只对 `REMOTE_DIR` 有写权限的账号，不要用 `root` |
 | `REMOTE_DIR` | `remote_dir` | 是 | — | 远程部署目录（绝对路径） | 必须是站点专属目录，不能是 `/www/wwwroot`、`/var/www`、`/usr/local` 等多站点容器或系统目录；末尾 `/` 会自动去掉；至少两级，如 `/www/wwwroot/域名`；目录不存在不会自动创建，脚本会报错并提示手动 `mkdir -p` |
-| `PORT` | `port` | 否 | `22` | SSH 端口 | 服务器防火墙 / 安全组需放行；非 22 时填实际端口，`deploy.sh` 自动用于 `ssh` 与 `scp` |
-| `SSH_KEY` | `ssh_key` | 否 | `$HOME/.ssh/id_rsa` | SSH 私钥路径 | 配置档默认 `$HOME/.ssh/id_rsa`，交互式向导默认 `$HOME/.ssh/id_ed25519`；可写 `$HOME`；文件不存在会直接报错；填了 `PASSWORD` 时可留空 |
-| `PASSWORD` | `password` | 否 | 空 | 登录密码 | 明文保存在权限 `600` 的本地文件中；配置后本机必须安装 `sshpass`；留空则用 `SSH_KEY`，两者都空会以禁止交互方式连接并失败；值内 `#` 前无空白时会保留；`#` 前有空白则按注释剥离，含「空格 + `#`」的密码请用引号包裹或改用密钥 |
-| `SSH_KEY_PASSPHRASE` | `ssh_key_passphrase` | 否 | 空 | 私钥口令 | 私钥带口令时填写，同样需要本机安装 `sshpass`；与 `PASSWORD` 同时填写时以 `PASSWORD` 为准；`profile.py` 暂不接受该字段，需手工写入 `.deploy-local.yml` |
-| `SITE_BASE` | `site_base` | 否 | `/` | 站点根路径（记录用） | **不参与构建**，只在部署信息里显示；子目录部署真正生效要在生成站点时执行 `init.py --base /docs/`（`build.sh` 未暴露该参数，需按「方式三」分步执行）；只改这一项不会改变资源路径 |
+| `PORT` | `port` | 是 | — | SSH 端口 | 无默认值，必须显式填写（如 `22`）；服务器防火墙 / 安全组需放行；`deploy.sh` 自动用于 `ssh` 与 `scp` |
+| `SSH_KEY` | `ssh_key` | 否 | — | SSH 私钥路径 | 无默认值；与 `PASSWORD` 至少填一项；可写 `$HOME`；文件不存在会直接报错；密码登录时留空 |
+| `PASSWORD` | `password` | 否 | — | 登录密码 | 明文保存在权限 `600` 的本地文件中；配置后本机必须安装 `sshpass`；与 `SSH_KEY` 至少填一项，两者都空会以禁止交互方式连接并失败；值内 `#` 前无空白时会保留；`#` 前有空白则按注释剥离，含「空格 + `#`」的密码请用引号包裹或改用密钥 |
+| `SSH_KEY_PASSPHRASE` | `ssh_key_passphrase` | 否 | — | 私钥口令 | 无默认值；私钥带口令时填写，同样需要本机安装 `sshpass`；与 `PASSWORD` 同时填写时以 `PASSWORD` 为准；`profile.py` 暂不接受该字段，需手工写入 `.deploy-local.yml` |
+| `SITE_BASE` | `site_base` | 是 | — | 站点根路径（记录用） | 无默认值，必须显式填写：根目录填 `/`，子目录填 `/docs/`；**不参与构建**，只在部署信息里显示；子目录部署真正生效要在生成站点时执行 `init.py --base /docs/`（`build.sh` 未暴露该参数，需按「方式三」分步执行）；只改这一项不会改变资源路径 |
 | `CLEAN_MODE` | `clean_mode` | 否 | `manifest` | 清理方式 | `manifest`：只删除上次部署清单内、本次已不存在的文件，不影响同目录其他程序；`all`：清空 `REMOTE_DIR` 顶层，保留 `.deploy-manifest` 与 `.user.ini`，仅限站点专属目录；`none`：不清理，旧文件会残留；其他取值等同 `none`，不会报错 |
 | `BUILD_BEFORE_DEPLOY` | `build_before_deploy` | 否 | `true` | 部署前是否构建 | `false` 等价于 `./deploy.sh --no-build`，适合 CI 已构建、只做上传的场景；命令行显式传 `--build` / `--no-build` 时以命令行为准 |
 | `REMOTE_TMP` | `remote_tmp` | 否 | `/tmp` | 远程临时目录 | 必须是绝对路径且账号有写权限；上传包 `<站点名>-<时间戳>.tar.gz` 放这里，解压后立即删除；用共享 `/tmp` 也可以 |
