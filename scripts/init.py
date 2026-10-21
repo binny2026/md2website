@@ -650,6 +650,7 @@ def main():
     ap.add_argument('--out', default=None)
     ap.add_argument('--title', default=None)
     ap.add_argument('--subtitle', default=None)
+    ap.add_argument('--name', default=None)
     ap.add_argument('--base', default='/')
     args = ap.parse_args()
 
@@ -665,6 +666,7 @@ def main():
         return 1
 
     title = args.title or os.path.basename(src)
+    site_name = args.name or re.sub(r'[^a-z0-9-]+', '-', title.lower()).strip('-') or 'vitepress-site'
     base = args.base if args.base.endswith('/') else args.base + '/'
 
     chapters, root_mds = find_md_dirs(src)
@@ -770,7 +772,7 @@ def main():
         'FEATURES': features,
     }))
     write(os.path.join(out, 'package.json'), render(PACKAGE_JSON, {
-        'NAME': re.sub(r'[^a-z0-9-]+', '-', title.lower()).strip('-') or 'vitepress-site',
+        'NAME': site_name,
     }))
     write(os.path.join(out, '.gitignore'), GITIGNORE)
     default_profile = re.sub(r'[^A-Za-z0-9._-]+', '-',

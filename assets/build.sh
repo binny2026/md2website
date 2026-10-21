@@ -63,6 +63,7 @@ SRC_DIR=""
 OUT_DIR=""
 TITLE=""
 SUBTITLE=""
+NAME=""
 WIZARD="false"
 DO_OPEN="true"
 NO_BUILD="false"
@@ -76,6 +77,8 @@ while [ $# -gt 0 ]; do
     --title) [ $# -ge 2 ] || die "--title 需要跟文字"; TITLE="$2"; shift ;;
     --title=*) TITLE="${1#*=}" ;;
     --subtitle) [ $# -ge 2 ] || die "--subtitle 需要跟文字"; SUBTITLE="$2"; shift ;;
+    --name) [ $# -ge 2 ] || die "--name 需要跟文字"; NAME="$2"; shift ;;
+    --name=*) NAME="${1#*=}" ;;
     --skill) [ $# -ge 2 ] || die "--skill 需要跟路径"; SKILL_DIR="$2"; shift ;;
     --no-open) DO_OPEN="false" ;;
     --no-build) NO_BUILD="true" ;;
@@ -164,7 +167,7 @@ fi
 
 info "扫描并生成站点"
 "$PY" "$SKILL_DIR/scripts/init.py" "$SRC_DIR" \
-  --out "$OUT_DIR" --title "$TITLE" ${SUBTITLE:+--subtitle "$SUBTITLE"} \
+  --out "$OUT_DIR" --title "$TITLE" ${SUBTITLE:+--subtitle "$SUBTITLE"} ${NAME:+--name "$NAME"} \
   | sed 's/^/  /'
 
 [ -f "$OUT_DIR/DEPLOY.md" ] || die "生成失败，请检查上面的输出"

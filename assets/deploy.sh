@@ -224,7 +224,9 @@ fi
 
 # ---------- 本地打包 ----------
 STAMP="$(date +%Y%m%d-%H%M%S)"
-PKG_NAME="langchain-doc-$STAMP.tar.gz"
+SITE_NAME="$(grep -o '"name": *"[^"]*"' "$SCRIPT_DIR/package.json" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+SITE_NAME="${SITE_NAME:-$(basename "$SCRIPT_DIR")}"
+PKG_NAME="$SITE_NAME-$STAMP.tar.gz"
 PKG_PATH="$SCRIPT_DIR/$PKG_NAME"
 cleanup_local() { rm -f "$PKG_PATH"; }
 trap cleanup_local EXIT
