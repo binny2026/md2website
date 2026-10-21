@@ -72,9 +72,9 @@ if [ -n "$PROFILE_NAME" ]; then
   CONF_SOURCE="配置档 ${PROFILE_NAME}（--profile）"
   [ -f "$CONF" ] || die "配置档不存在: $CONF
    先创建：python3 <skill>/scripts/profile.py set --name $PROFILE_NAME HOST=... USER=... REMOTE_DIR=..."
-elif [ -f "$SCRIPT_DIR/.deploy-local.conf" ]; then
-  CONF="$SCRIPT_DIR/.deploy-local.conf"
-  CONF_SOURCE="站点本地配置 .deploy-local.conf"
+elif [ -f "$SCRIPT_DIR/.deploy-local.yml" ]; then
+  CONF="$SCRIPT_DIR/.deploy-local.yml"
+  CONF_SOURCE="站点本地配置 .deploy-local.yml"
 elif [ -f "$PROFILE_MARK" ]; then
   PROFILE_NAME="$(tr -d '\r\n ' < "$PROFILE_MARK")"
   CONF="$PROFILE_DIR/$PROFILE_NAME.conf"
@@ -87,10 +87,11 @@ elif [ -f "$SCRIPT_DIR/deploy.conf" ]; then
   CONF="$SCRIPT_DIR/deploy.conf"
   CONF_SOURCE="项目内 deploy.conf（旧版）"
 else
-  die "未找到部署配置。任选其一：
+  die "未找到部署配置。请先交互式配置（支持账号密码或 SSH 密钥登录）：
+   python3 <skill>/scripts/profile.py wizard --project \"$SCRIPT_DIR\"
+   或任选其一：
    1) 绑定配置档：python3 <skill>/scripts/profile.py bind --project \"$SCRIPT_DIR\" --name <名字>
-   2) 缓存配置到本地：python3 <skill>/scripts/profile.py cache --project \"$SCRIPT_DIR\"
-   3) 项目内放 deploy.conf（旧版方式）"
+   2) 缓存配置到本地：python3 <skill>/scripts/profile.py cache --project \"$SCRIPT_DIR\""
 fi
 
 # 只接受 KEY=VALUE 形式的简单配置，不执行任意 shell 代码
@@ -104,7 +105,7 @@ load_conf() {
     val="${line#*=}"
     key="$(printf '%s' "$key" | tr -d '[:space:]')"
     case "$key" in
-      HOST|PORT|USER|REMOTE_DIR|SSH_KEY|SSH_KEY_PASSPHRASE|SITE_BASE|CLEAN_MODE|BUILD_BEFORE_DEPLOY|REMOTE_TMP|DIST_NAME|UPLOAD_WITH_DIR) ;;
+      HOST|PORT|USER|PASSWORD|REMOTE_DIR|SSH_KEY|SSH_KEY_PASSPHRASE|SITE_BASE|CLEAN_MODE|BUILD_BEFORE_DEPLOY|REMOTE_TMP|DIST_NAME|UPLOAD_WITH_DIR) ;;
       *) continue ;;
     esac
     # 去掉两端引号
@@ -116,7 +117,46 @@ load_conf() {
     eval "$key=\"\$val\""
   done < "$file"
 }
-load_conf "$CONF"
+# 解析 yml 形式的站点本地配置（.deploy-local.yml，字段名 snake_case 或大写下划线）
+load_yml() {
+  local file="$1" line key val
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in ''|'#'*) continue ;; esac
+    case "$line" in *:*) ;; *) continue ;; esac
+    key="${line%%:*}"
+    val="${line#*:}"
+    key="$(printf '%s' "$key" | tr -d '[:space:]')"
+    val="${val#"${val%%[![:space:]]*}"}"
+    case "$val" in
+      \"*\") val="${val#\"}"; val="${val%\"}" ;;
+      \'*\') val="${val#\'}"; val="${val%\'}" ;;
+    esac
+    case "$key" in
+      host|HOST) key="HOST" ;;
+      port|PORT) key="PORT" ;;
+      user|USER) key="USER" ;;
+      password|PASSWORD) key="PASSWORD" ;;
+      remote_dir|REMOTE_DIR) key="REMOTE_DIR" ;;
+      ssh_key|SSH_KEY) key="SSH_KEY" ;;
+      ssh_key_passphrase|SSH_KEY_PASSPHRASE) key="SSH_KEY_PASSPHRASE" ;;
+      site_base|SITE_BASE) key="SITE_BASE" ;;
+      clean_mode|CLEAN_MODE) key="CLEAN_MODE" ;;
+      build_before_deploy|BUILD_BEFORE_DEPLOY) key="BUILD_BEFORE_DEPLOY" ;;
+      remote_tmp|REMOTE_TMP) key="REMOTE_TMP" ;;
+      dist_name|DIST_NAME) key="DIST_NAME" ;;
+      upload_with_dir|UPLOAD_WITH_DIR) key="UPLOAD_WITH_DIR" ;;
+      *) continue ;;
+    esac
+    val="${val//\$HOME/$HOME}"
+    eval "$key=\"\$val\""
+  done < "$file"
+}
+
+case "$CONF" in
+  *.yml|*.yaml) load_yml "$CONF" ;;
+  *) load_conf "$CONF" ;;
+esac
 
 : "${HOST:?配置缺少 HOST（用 profile.py set 补上）}"
 : "${USER:?配置缺少 USER（用 profile.py set 补上）}"
@@ -166,35 +206,39 @@ IMG_COUNT=$(find "$DIST_DIR" -type f \( -name '*.png' -o -name '*.jpg' -o -name 
 ok "产物检查：${PAGE_COUNT} 个页面 / ${IMG_COUNT} 张图片"
 
 # ---------- SSH 参数 ----------
-# BatchMode=yes：不允许交互输入密码，避免密钥未配置时脚本卡死等输入
-SSH_OPTS=(-p "$PORT" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o BatchMode=yes)
-SCP_OPTS=(-P "$PORT" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o BatchMode=yes)
+# 有登录密码/私钥口令时用 sshpass；否则用密钥并禁止交互（BatchMode）
+SSH_OPTS=(-p "$PORT" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
+SCP_OPTS=(-P "$PORT" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
 if [ -n "${SSH_KEY:-}" ]; then
   [ -f "$SSH_KEY" ] || die "找不到私钥: $SSH_KEY"
   SSH_OPTS+=(-i "$SSH_KEY")
   SCP_OPTS+=(-i "$SSH_KEY")
 fi
 
+SSHPASS_PW="${PASSWORD:-${SSH_KEY_PASSPHRASE:-}}"
 USE_SSHPASS="false"
-if [ -n "${SSH_KEY_PASSPHRASE:-}" ]; then
+if [ -n "$SSHPASS_PW" ]; then
   if command -v sshpass >/dev/null 2>&1; then
     USE_SSHPASS="true"
   else
-    die "私钥有口令但本机未安装 sshpass。建议执行 ssh-add \"$SSH_KEY\" 后把 SSH_KEY_PASSPHRASE 置空"
+    die "配置了登录密码但本机未安装 sshpass。安装：brew install sshpass（macOS）或 apt/yum install sshpass（Linux）"
   fi
+else
+  SSH_OPTS+=(-o BatchMode=yes)
+  SCP_OPTS+=(-o BatchMode=yes)
 fi
 
 ssh_run() {
   local cmd="$1"
   if [ "$USE_SSHPASS" = "true" ]; then
-    sshpass -p "$SSH_KEY_PASSPHRASE" ssh "${SSH_OPTS[@]}" "$USER@$HOST" "$cmd"
+    sshpass -p "$SSHPASS_PW" ssh "${SSH_OPTS[@]}" "$USER@$HOST" "$cmd"
   else
     ssh "${SSH_OPTS[@]}" "$USER@$HOST" "$cmd"
   fi
 }
 scp_run() {
   if [ "$USE_SSHPASS" = "true" ]; then
-    sshpass -p "$SSH_KEY_PASSPHRASE" scp "${SCP_OPTS[@]}" "$@"
+    sshpass -p "$SSHPASS_PW" scp "${SCP_OPTS[@]}" "$@"
   else
     scp "${SCP_OPTS[@]}" "$@"
   fi

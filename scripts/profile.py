@@ -21,7 +21,7 @@ import sys
 
 PROFILE_DIR = os.path.expanduser('~/.workbuddy/deploy-profiles')
 PROFILE_MARK = '.deploy-profile'
-LOCAL_CONF = '.deploy-local.conf'
+LOCAL_YML = '.deploy-local.yml'
 
 # 字段定义：(键, 说明, 是否必填)
 FIELDS = [
@@ -30,6 +30,7 @@ FIELDS = [
     ('USER', '登录账号', True),
     ('REMOTE_DIR', '远程部署目录（绝对路径）', True),
     ('SSH_KEY', 'SSH 私钥路径', False),
+    ('PASSWORD', '登录密码（留空则用 SSH 密钥）', False),
     ('SITE_BASE', '站点根路径（/ 或 /子目录/）', False),
     ('CLEAN_MODE', '清理方式 manifest|none|all', False),
     ('BUILD_BEFORE_DEPLOY', '部署前是否构建 true|false', False),
@@ -42,6 +43,7 @@ DEFAULTS = {
     'PORT': '22',
     'USER': 'root',
     'SSH_KEY': '$HOME/.ssh/id_rsa',
+    'PASSWORD': '',
     'SITE_BASE': '/',
     'CLEAN_MODE': 'manifest',
     'BUILD_BEFORE_DEPLOY': 'true',
@@ -242,8 +244,36 @@ def cmd_bind(args):
     return 0
 
 
+FIELD_YML = {
+    'HOST': 'host', 'PORT': 'port', 'USER': 'user', 'PASSWORD': 'password',
+    'REMOTE_DIR': 'remote_dir', 'SSH_KEY': 'ssh_key', 'SITE_BASE': 'site_base',
+    'CLEAN_MODE': 'clean_mode', 'BUILD_BEFORE_DEPLOY': 'build_before_deploy',
+    'REMOTE_TMP': 'remote_tmp', 'DIST_NAME': 'dist_name', 'UPLOAD_WITH_DIR': 'upload_with_dir',
+}
+
+
+def _write_local_yml(project, data, source):
+    """把配置写为站点本地 yml（.deploy-local.yml，权限 600，不上传服务器）"""
+    lines = [
+        f'# 站点本地部署配置（来源：{source}，权限 600，不上传服务器，勿提交 git）',
+        '# 由 md-to-vitepress skill 生成',
+    ]
+    for key, _desc, _req in FIELDS:
+        val = data.get(key, DEFAULTS.get(key, ''))
+        yml_key = FIELD_YML.get(key, key.lower())
+        lines.append(f'{yml_key}: {val}')
+    local = os.path.join(project, LOCAL_YML)
+    with open(local, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines) + '\n')
+    try:
+        os.chmod(local, 0o600)
+    except OSError:
+        pass
+    return local
+
+
 def cmd_cache(args):
-    """把配置档内容缓存到站点目录的 .deploy-local.conf（不上传服务器）"""
+    """把配置档内容缓存到站点目录的 .deploy-local.yml（不上传服务器）"""
     project = os.path.abspath(args.project)
     if not os.path.isdir(project):
         print(f'目录不存在: {project}', file=sys.stderr)
@@ -260,21 +290,37 @@ def cmd_cache(args):
     if not data:
         print(f'配置档 {name} 不存在或为空，请先 profile.py set --name {name} ...', file=sys.stderr)
         return 1
-    lines = [
-        f'# 站点本地部署配置（缓存自配置档 {name}，权限 600，不上传服务器）',
-        '# 由 md-to-vitepress skill 的 profile.py cache 生成',
-    ]
-    for key, desc, _ in FIELDS:
-        val = data.get(key, DEFAULTS.get(key, ''))
-        lines.append(f'{key}="{val}"')
-    local = os.path.join(project, LOCAL_CONF)
-    with open(local, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(lines) + '\n')
-    try:
-        os.chmod(local, 0o600)
-    except OSError:
-        pass
+    local = _write_local_yml(project, data, f'配置档 {name}')
     print(f'已缓存到: {local}')
+    return 0
+
+
+def cmd_wizard(args):
+    """交互式引导配置，写入站点本地 .deploy-local.yml"""
+    project = os.path.abspath(args.project)
+    if not os.path.isdir(project):
+        print(f'目录不存在: {project}', file=sys.stderr)
+        return 1
+    print('开始配置站点部署信息（直接回车使用方括号内默认值）')
+    host = input('服务器主机（域名或 IP）: ').strip()
+    if not host:
+        print('未输入主机，已取消', file=sys.stderr)
+        return 1
+    user = input('登录账号 [root]: ').strip() or 'root'
+    password = input('登录密码（留空则用 SSH 密钥）: ').strip()
+    ssh_key = input('SSH 私钥路径 [$HOME/.ssh/id_ed25519]: ').strip() or '$HOME/.ssh/id_ed25519'
+    remote_dir = input('远程部署目录（绝对路径）: ').strip()
+    if not remote_dir:
+        print('未输入远程目录，已取消', file=sys.stderr)
+        return 1
+    port = input('SSH 端口 [22]: ').strip() or '22'
+    site_base = input('站点根路径 [/]: ').strip() or '/'
+    data = {
+        'HOST': host, 'USER': user, 'PASSWORD': password, 'REMOTE_DIR': remote_dir,
+        'SSH_KEY': ssh_key, 'PORT': port, 'SITE_BASE': site_base,
+    }
+    local = _write_local_yml(project, data, 'wizard 交互配置')
+    print(f'已写入: {local}')
     return 0
 
 
@@ -293,11 +339,14 @@ def main():
     p = sub.add_parser('cache')
     p.add_argument('--project', required=True)
     p.add_argument('--name')
+    p = sub.add_parser('wizard')
+    p.add_argument('--project', required=True)
 
     args = ap.parse_args()
     return {
         'path': cmd_path, 'show': cmd_show, 'check': cmd_check,
         'set': cmd_set, 'list': cmd_list, 'bind': cmd_bind, 'cache': cmd_cache,
+        'wizard': cmd_wizard,
     }[args.cmd](args)
 
 

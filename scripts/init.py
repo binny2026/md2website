@@ -520,7 +520,7 @@ PACKAGE_JSON = '''{
 '''
 
 GITIGNORE = '''# 部署配置（含服务器敏感信息，勿提交）
-.deploy-local.conf
+.deploy-local.yml
 .deploy-profile
 deploy.conf
 
@@ -564,7 +564,7 @@ DEPLOY_README = '''# 部署配置说明
     $PY $SKILL/scripts/profile.py list          # 列出所有配置档
     $PY $SKILL/scripts/profile.py show          # 查看本项目配置
     $PY $SKILL/scripts/profile.py set --name @@NAME@@ KEY=VALUE   # 改某一项
-    $PY $SKILL/scripts/profile.py cache --project "$(pwd)"   # 缓存配置到站点本地 .deploy-local.conf（不上传服务器）
+    $PY $SKILL/scripts/profile.py cache --project "$(pwd)"   # 缓存配置到站点本地 .deploy-local.yml（不上传服务器）
 
 ## 可选字段
 
