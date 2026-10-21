@@ -1,0 +1,197 @@
+# SETUP · 三步上手
+
+把 Markdown 文档变成可浏览的静态网站，并能一键部署到服务器。
+
+---
+
+## 前置要求
+
+| 依赖 | 版本 | 用途 | 检查命令 |
+| --- | --- | --- | --- |
+| Python | 3.8+ | 运行辅助脚本 | `python3 --version` |
+| Node.js | **18+** | 构建站点（必需） | `node --version` |
+| tar / ssh / scp | 系统自带 | 仅部署时需要 | `tar --version` |
+
+没装 Node.js？
+
+- macOS：`brew install node` 或到 [nodejs.org](https://nodejs.org) 下载
+- Ubuntu/Debian：`curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt install -y nodejs`
+- Windows：装好 Node.js 后，用 **WSL** 或 **Git Bash** 运行
+
+自检：
+
+```bash
+python3 scripts/_env.py
+```
+
+---
+
+## 最简用法：双击即用
+
+装好之后，把一键入口复制到你的 Markdown 目录：
+
+```bash
+cp ~/.workbuddy/skills/md-to-vitepress/assets/build.sh ~/你的md目录/
+```
+
+然后在 **Finder 里双击** `build.sh`（或在终端里 `./build.sh`），它会自动完成：
+
+```
+检查环境 → 扫描章节 → 生成站点 → 安装依赖 → 构建 → 打开浏览器
+```
+
+零参数、零配置。站点默认生成在同级的 `<目录名>-site/`。
+
+想自己定标题和输出位置：
+
+```bash
+./build.sh --wizard
+```
+
+会逐项问你：站点标题、副标题、输出目录（直接回车用默认值）。
+
+其他参数：
+
+| 参数 | 作用 |
+| --- | --- |
+| `--dir <路径>` | 指定 Markdown 源目录 |
+| `--out <路径>` | 指定输出目录 |
+| `--title "标题"` | 指定站点标题 |
+| `--no-open` | 构建完不自动打开浏览器 |
+| `--no-build` | 只生成，不装依赖、不构建 |
+
+> macOS 首次双击若提示“无法打开”，在终端执行一次 `chmod +x build.sh`，或在
+> 「系统设置 → 隐私与安全性」里点“仍要打开”。
+
+---
+
+## 分步命令（需要精细控制时用）
+
+下面是可以手动逐步执行的版本，适合排查问题或集成到自己的流程。
+
+### 第一步：安装
+
+```bash
+git clone <仓库地址> md-to-vitepress
+cd md-to-vitepress
+./install.sh
+```
+
+默认装到 `~/.workbuddy/skills/md-to-vitepress`。改位置用 `./install.sh --dir ~/my-skills/md-to-vitepress`。
+
+只检查环境不安装：`./install.sh --check`
+
+---
+
+### 第二步：生成站点
+
+```bash
+SKILL=~/.workbuddy/skills/md-to-vitepress
+
+# 先看看源文档有什么坑（只读，不改文件）
+python3 $SKILL/scripts/scan.py ~/你的md目录
+
+# 生成站点
+python3 $SKILL/scripts/init.py ~/你的md目录 \
+    --out ./my-doc-site \
+    --title "我的文档"
+```
+
+`init.py` 会：
+
+- 按子目录识别章节，取每章首个 H1 当标题
+- 复制 Markdown 与图片到 `./my-doc-site/docs/`（**源目录只读，不会被改**）
+- 生成导航、首页、搜索配置、深浅色主题、图片放大
+
+然后：
+
+```bash
+cd my-doc-site
+npm install      # 首次约 1-3 分钟
+npm run dev      # 打开 http://127.0.0.1:5174
+```
+
+如果源文档有 `<img>` 标签之类的问题导致构建失败：
+
+```bash
+python3 $SKILL/scripts/fix.py ./docs
+npm run build
+```
+
+---
+
+### 第三步：部署（可选）
+
+服务器信息**不放在项目里**，统一存在 `~/.workbuddy/deploy-profiles/`，多个项目各一份互不干扰。
+
+```bash
+# 1. 创建配置档
+python3 $SKILL/scripts/profile.py set --name my-doc \
+    HOST="doc.example.com" \
+    USER="root" \
+    REMOTE_DIR="/www/wwwroot/doc.example.com" \
+    SITE_BASE="/"
+
+# 2. 绑定到项目
+python3 $SKILL/scripts/profile.py bind --project . --name my-doc
+
+# 3. 先测连通性
+./deploy.sh --dry-run
+
+# 4. 正式部署
+./deploy.sh
+```
+
+**首次部署前**，把公钥装到服务器（只需一次）：
+
+```bash
+ssh-copy-id -i ~/.ssh/id_rsa.pub root@doc.example.com
+```
+
+配置档常用操作：
+
+```bash
+python3 $SKILL/scripts/profile.py list     # 所有配置档
+python3 $SKILL/scripts/profile.py show     # 本项目的配置
+./deploy.sh --profile other-doc            # 临时换一台部署
+```
+
+---
+
+## 关键概念：SITE_BASE
+
+产物里的资源用绝对路径 `/assets/...`，所以：
+
+| 部署位置 | SITE_BASE | 说明 |
+| --- | --- | --- |
+| `https://doc.example.com/` | `/` | 域名根目录，默认 |
+| `https://example.com/docs/` | `/docs/` | 子目录，**改后要重新构建** |
+
+填错的表现：页面能打开但样式全丢、图片全裂。
+
+---
+
+## 日常维护
+
+| 场景 | 操作 |
+| --- | --- |
+| 改已有章节内容 | 覆盖 `docs/<章节>/index.md`，`npm run build` |
+| 加图片 | 放进该章 `assets/`，正文写 `![](assets/xx.png)` |
+| 新增章节 | 在 `docs/.vitepress/config.mjs` 的 `chapters` 数组加一行，再 build |
+
+**新增章节必须改 config，否则侧边栏点不到。**
+
+---
+
+## 遇到问题
+
+| 现象 | 原因 | 解决 |
+| --- | --- | --- |
+| `npm: command not found` | 没装 Node.js | 见开头安装指引 |
+| 构建报 `Element is missing end tag` | 正文有裸尖括号 | 检查 config 的 `markdown.config` 是否被改动 |
+| 构建报 `Rollup failed to resolve import` | 原始 `<img>` 标签 | `python3 $SKILL/scripts/fix.py ./docs` |
+| 线上样式全丢 | SITE_BASE 与实际路径不符 | 改 `SITE_BASE` 后重新 build |
+| `SSH 连接失败（已禁止交互输入密码）` | 公钥没装到服务器 | 执行报错提示里的 `ssh-copy-id` 命令 |
+| 双击 index.html 打不开内链 | 需要 HTTP 服务 | 用 `npm run preview` 或部署后访问 |
+
+更多排错见 `SKILL.md`。
