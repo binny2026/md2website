@@ -73,8 +73,20 @@ def ensure_dir():
         pass
 
 
+def strip_inline_comment(v):
+    """去掉行尾注释：仅当 # 前有空白时生效，避免密码里的 # 被误截断"""
+    if v[:1] in ('"', "'"):
+        end = v.find(v[0], 1)
+        if end != -1:
+            return v[:end + 1]
+    for i, ch in enumerate(v):
+        if ch == '#' and i > 0 and v[i - 1].isspace():
+            return v[:i].rstrip()
+    return v
+
+
 def read_profile(name):
-    """解析 KEY=VALUE，# 开头为注释。不执行任何 shell 代码。"""
+    """解析 KEY=VALUE，# 独占一行为注释，行尾 # 注释会被剥离。不执行任何 shell 代码。"""
     path = profile_path(name)
     data = {}
     if not os.path.isfile(path):
@@ -88,7 +100,7 @@ def read_profile(name):
                 continue
             k, v = line.split('=', 1)
             k = k.strip()
-            v = v.strip()
+            v = strip_inline_comment(v.strip())
             if len(v) >= 2 and v[0] == v[-1] and v[0] in '"\'':
                 v = v[1:-1]
             data[k] = v

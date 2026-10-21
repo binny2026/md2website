@@ -4,3 +4,11 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# 部署配置（含服务器地址与密码，严禁提交）
+.deploy-local.yml
+.deploy-local.yaml
+.deploy-profile
+deploy.conf
+.deploy-manifest
+.deploy-stage/

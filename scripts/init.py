@@ -576,7 +576,7 @@ DEPLOY_README = '''# 部署配置说明
 | PORT | 22 | SSH 端口 |
 | SSH_KEY | $HOME/.ssh/id_rsa | 私钥路径 |
 | SITE_BASE | / | 站点根路径，子目录部署填 /docs/ |
-| CLEAN_MODE | manifest | 清理方式 manifest / none / all |
+| CLEAN_MODE | manifest | 清理方式：manifest 只清上次部署的文件；all 清空目录（保留 .user.ini）；none 不清理 |
 | BUILD_BEFORE_DEPLOY | true | 部署前是否构建 |
 | REMOTE_TMP | /tmp | 远程临时目录 |
 | DIST_NAME | dist | 产物文件夹名（上传时） |
@@ -586,6 +586,13 @@ DEPLOY_README = '''# 部署配置说明
 
     ./deploy.sh --profile 另一个配置档名    # 临时切换
     $PY $SKILL/scripts/profile.py bind --project "$(pwd)" --name 另一个   # 永久切换
+
+## 安全边界
+
+- 部署只写 `REMOTE_DIR` 与远程临时包，不执行 sudo、不重启服务、不修改 nginx 配置
+- `REMOTE_DIR` 必须是站点专属目录，不能填 `/www/wwwroot`、`/var/www` 等多站点容器目录
+- `manifest` 清单只记录本工具上传的文件，目录里其他程序的已有文件不会被删除
+- 建议使用只对 `REMOTE_DIR` 有写权限的部署账号，而不是 root
 
 ## 部署后检查（nginx cleanUrls）
 

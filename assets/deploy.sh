@@ -94,6 +94,22 @@ else
    2) 缓存配置到本地：python3 <skill>/scripts/profile.py cache --project \"$SCRIPT_DIR\""
 fi
 
+# 去掉行尾注释：仅当 # 前有空白时生效，避免密码里的 # 被误截断
+strip_inline_comment() {
+  local v="$1" q rest
+  case "$v" in
+    \"*|\'*)
+      # 引号包裹：只保留到闭合引号，引号内的 # 不当注释
+      q="${v%"${v#?}"}"
+      rest="${v#?}"
+      case "$rest" in
+        *"$q"*) printf '%s%s%s' "$q" "${rest%%"$q"*}" "$q"; return 0 ;;
+      esac
+      ;;
+  esac
+  printf '%s' "$v" | sed -e 's/[[:space:]][[:space:]]*#.*$//'
+}
+
 # 只接受 KEY=VALUE 形式的简单配置，不执行任意 shell 代码
 load_conf() {
   local file="$1" line key val
@@ -108,6 +124,9 @@ load_conf() {
       HOST|PORT|USER|PASSWORD|REMOTE_DIR|SSH_KEY|SSH_KEY_PASSPHRASE|SITE_BASE|CLEAN_MODE|BUILD_BEFORE_DEPLOY|REMOTE_TMP|DIST_NAME|UPLOAD_WITH_DIR) ;;
       *) continue ;;
     esac
+    # 去掉行尾注释（# 前需有空白），再处理引号
+    val="$(strip_inline_comment "$val")"
+    val="${val%"${val##*[![:space:]]}"}"
     # 去掉两端引号
     case "$val" in
       \"*\") val="${val#\"}"; val="${val%\"}" ;;
@@ -128,6 +147,9 @@ load_yml() {
     val="${line#*:}"
     key="$(printf '%s' "$key" | tr -d '[:space:]')"
     val="${val#"${val%%[![:space:]]*}"}"
+    # 去掉行尾注释（# 前需有空白），再处理引号
+    val="$(strip_inline_comment "$val")"
+    val="${val%"${val##*[![:space:]]}"}"
     case "$val" in
       \"*\") val="${val#\"}"; val="${val%\"}" ;;
       \'*\') val="${val#\'}"; val="${val%\'}" ;;
@@ -162,12 +184,40 @@ esac
 : "${USER:?配置缺少 USER（用 profile.py set 补上）}"
 : "${REMOTE_DIR:?配置缺少 REMOTE_DIR（用 profile.py set 补上）}"
 PORT="${PORT:-22}"
-REMOTE_DIR="${REMOTE_DIR%/}"
+[ "$REMOTE_DIR" = "/" ] || REMOTE_DIR="${REMOTE_DIR%/}"
 REMOTE_TMP="${REMOTE_TMP:-/tmp}"
 CLEAN_MODE="${CLEAN_MODE:-manifest}"
 [ -z "$DO_BUILD" ] && DO_BUILD="${BUILD_BEFORE_DEPLOY:-true}"
 DIST_NAME="${DIST_NAME:-dist}"
 UPLOAD_WITH_DIR="${UPLOAD_WITH_DIR:-false}"
+
+# DIST_NAME 会被用于本地拼路径与打包，必须是单一目录名
+case "$DIST_NAME" in
+  ''|.|..|*/*) die "DIST_NAME 非法: '$DIST_NAME'（不能为空、不能是 . 或 ..、不能包含 /）" ;;
+esac
+printf '%s' "$DIST_NAME" | grep -Eq '^[A-Za-z0-9._-]+$' \
+  || die "DIST_NAME 只允许字母、数字、点、下划线、短横线: '$DIST_NAME'"
+
+# ---------- 安全护栏：拒绝危险的远程目录 ----------
+# CLEAN_MODE=all 会在 REMOTE_DIR 内清空内容，配置写错可能误删系统目录或其他站点
+case "$REMOTE_DIR" in
+  /*) ;;
+  *) die "远程目录必须是绝对路径: '$REMOTE_DIR'" ;;
+esac
+case "$REMOTE_DIR" in
+  /|"$HOME"|"$HOME/"|/root|/root/|/home|/home/|/www|/www/|/www/wwwroot|/www/wwwroot/|\
+  /usr|/usr/|/usr/local|/usr/local/|/etc|/etc/|/var|/var/|/var/www|/var/www/|\
+  /tmp|/tmp/|/opt|/opt/)
+    die "远程目录过于危险: '$REMOTE_DIR'，拒绝部署（防止清理时误删系统目录或其他站点）
+   请填写站点专属目录，例如 /www/wwwroot/你的域名" ;;
+esac
+_rd="${REMOTE_DIR#/}"
+case "$_rd" in
+  */*) ;;
+  *) die "远程目录层级过浅: '$REMOTE_DIR'
+   请使用至少两级目录，例如 /www/wwwroot/你的域名" ;;
+esac
+unset _rd
 
 printf '\n%s╭─ 部署目标 ───────────────────────────────────╮%s\n' "$C_INFO" "$C_RESET"
 printf '  %-10s %s@%s:%s\n' "服务器" "$USER" "$HOST" "$PORT"
@@ -176,6 +226,11 @@ printf '  %-10s %s\n' "站点根路径" "${SITE_BASE:-/}"
 printf '  %-10s %s\n' "清理方式" "$CLEAN_MODE"
 printf '  %-10s %s\n' "配置来源" "$CONF_SOURCE"
 printf '%s╰──────────────────────────────────────────────╯%s\n\n' "$C_INFO" "$C_RESET"
+
+if [ "$CLEAN_MODE" = "all" ]; then
+  warn "CLEAN_MODE=all：将清空 $REMOTE_DIR 顶层内容（保留 .deploy-manifest 与 .user.ini）
+   请确认该目录是站点专属目录，不是 /www/wwwroot 这类多站点容器"
+fi
 
 # ---------- 打包前的构建 ----------
 if [ "$DO_BUILD" != "false" ]; then
@@ -231,14 +286,15 @@ fi
 ssh_run() {
   local cmd="$1"
   if [ "$USE_SSHPASS" = "true" ]; then
-    sshpass -p "$SSHPASS_PW" ssh "${SSH_OPTS[@]}" "$USER@$HOST" "$cmd"
+    # 用 -e 从环境变量读密码，避免密码出现在进程列表（ps）里
+    SSHPASS="$SSHPASS_PW" sshpass -e ssh "${SSH_OPTS[@]}" "$USER@$HOST" "$cmd"
   else
     ssh "${SSH_OPTS[@]}" "$USER@$HOST" "$cmd"
   fi
 }
 scp_run() {
   if [ "$USE_SSHPASS" = "true" ]; then
-    sshpass -p "$SSHPASS_PW" scp "${SCP_OPTS[@]}" "$@"
+    SSHPASS="$SSHPASS_PW" sshpass -e scp "${SCP_OPTS[@]}" "$@"
   else
     scp "${SCP_OPTS[@]}" "$@"
   fi
@@ -314,18 +370,24 @@ cd "$REMOTE_DIR"
 MANIFEST=".deploy-manifest"
 if [ "$CLEAN_MODE" = "manifest" ] && [ -f "\$MANIFEST" ]; then
   while IFS= read -r rel; do
-    if [ -n "\$rel" ] && [ -e "\$rel" ]; then rm -f -- "\$rel"; fi
+    # 拒绝绝对路径与包含 .. 的条目，防止清单被篡改后越出站点目录
+    if [ -n "\$rel" ] && [ "\${rel#/}" = "\$rel" ] && [ "\${rel#*..}" = "\$rel" ]; then
+      if [ -e "\$rel" ]; then rm -f -- "\$rel"; fi
+    fi
   done < "\$MANIFEST"
 elif [ "$CLEAN_MODE" = "all" ]; then
-  find . -mindepth 1 -maxdepth 1 ! -name ".deploy-manifest" -exec rm -rf {} +
+  # 保留清单与 .user.ini（宝塔防跨站配置），只清空站点目录内的其余内容
+  find . -mindepth 1 -maxdepth 1 ! -name ".deploy-manifest" ! -name ".user.ini" -exec rm -rf {} +
 fi
 
 # 2) 解压覆盖
 tar -xzf "$REMOTE_PKG" -C "$REMOTE_DIR"
 
-# 3) 记录本次部署清单，供下次清理
+# 3) 记录本次部署清单：以上传包内容为准，不扫描目录里已有的其他文件
 if [ "$CLEAN_MODE" = "manifest" ]; then
-  find . -type f ! -name "\$MANIFEST" ! -name ".user.ini" | sed 's|^\./||' | sort > "\$MANIFEST"
+  tar -tzf "$REMOTE_PKG" \
+    | awk '{ sub(/^\.\//,""); if (\$0 ~ /\/\$/) next; if (\$0==".deploy-manifest" || \$0==".user.ini") next; print }' \
+    | sort > "\$MANIFEST"
 fi
 
 rm -f "$REMOTE_PKG"
@@ -338,8 +400,12 @@ ok "远程部署完成"
 
 # ---------- 结果校验 ----------
 info "校验线上文件"
-REMOTE_INDEX_OK=$(ssh_run "test -f '$REMOTE_DIR/index.html' && echo yes" 2>/dev/null || true)
-[ "$REMOTE_INDEX_OK" = "yes" ] || die "线上缺少 index.html，部署可能异常"
+INDEX_PATH="$REMOTE_DIR/index.html"
+if [ "$UPLOAD_WITH_DIR" = "true" ]; then
+  INDEX_PATH="$REMOTE_DIR/$DIST_NAME/index.html"
+fi
+REMOTE_INDEX_OK=$(ssh_run "test -f '$INDEX_PATH' && echo yes" 2>/dev/null || true)
+[ "$REMOTE_INDEX_OK" = "yes" ] || die "线上缺少 index.html: $INDEX_PATH，部署可能异常"
 REMOTE_FILE_COUNT=$(ssh_run "find '$REMOTE_DIR' -type f | wc -l" | tr -d ' ')
 ok "线上文件数：$REMOTE_FILE_COUNT"
 

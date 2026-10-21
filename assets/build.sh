@@ -153,6 +153,15 @@ if [ "$WIZARD" = "true" ]; then
   echo
 fi
 
+# ---------- 安全护栏：拒绝危险的输出目录 ----------
+# 重建时会 rm -rf "$OUT_DIR"，必须先挡住系统目录与源目录本身
+case "$OUT_DIR" in
+  ""|"/"|"$HOME"|"$HOME/")
+    die "输出目录过于危险: '$OUT_DIR'，拒绝删除/写入" ;;
+esac
+[ "$OUT_DIR" != "$SRC_DIR" ] || die "输出目录不能与源目录相同: $OUT_DIR"
+[ "$OUT_DIR" != "$(dirname "$SRC_DIR")" ] || die "输出目录不能是源目录的父目录: $OUT_DIR"
+
 # ---------- 生成站点 ----------
 if [ -d "$OUT_DIR" ]; then
   warn "输出目录已存在：$OUT_DIR"
