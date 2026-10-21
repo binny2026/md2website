@@ -51,6 +51,60 @@ cd md2website
 
 默认安装到 `~/.workbuddy/skills/md2website`。
 
+装好后，用一个真实目录从零跑一遍（复制即可执行）：
+
+```bash
+# 1) 安装（上一步已完成）
+./install.sh
+
+# 2) 准备一个 Markdown 目录，已有文档就跳过
+mkdir -p ~/notes/demo/01-基础
+printf '# 第一章\n\n正文内容\n' > ~/notes/demo/01-基础/01.md
+
+# 3) 复制一键入口到文档目录并执行
+cp ~/.workbuddy/skills/md2website/assets/build.sh ~/notes/demo/
+cd ~/notes/demo
+./build.sh --title "我的笔记" --name my-notes
+
+# 4) 浏览器自动打开 http://127.0.0.1:4173
+#    站点生成在同级目录：~/notes/demo-site/
+```
+
+执行过程中会依次看到环境检查、章节识别、生成站点、安装依赖、构建和预览地址：
+
+```
+检查环境 → 扫描章节 → 生成站点 → 安装依赖 → 构建 → 启动预览
+
+✓ 01 第一章 → /01-基础/ (md 1, img 0)
+站点目录：/Users/you/notes/demo-site
+预览地址：http://127.0.0.1:4173
+```
+
+需要调整时：
+
+```bash
+# 只生成项目，不装依赖、不构建
+./build.sh --no-build
+
+# 构建完不自动打开浏览器
+./build.sh --no-open
+
+# 自定义输出目录与副标题
+./build.sh --out ~/notes/demo-site --subtitle "学习笔记"
+```
+
+确认站点没问题后，可选部署到服务器：
+
+```bash
+cd ~/notes/demo-site
+# 交互式填写主机、账号、密码或私钥、远程目录
+python3 ~/.workbuddy/skills/md2website/scripts/profile.py wizard --project "$(pwd)"
+./deploy.sh --dry-run   # 先只检查连通性
+./deploy.sh             # 构建 + 上传 + 远程解压 + 校验
+```
+
+更多参数见下方「使用」章节；首次构建会安装 npm 依赖，通常需要 1–3 分钟。
+
 ### 方式二：安装到自定义目录
 
 ```bash
