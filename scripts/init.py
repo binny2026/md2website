@@ -177,7 +177,7 @@ def build_dir_tree(dirpath, slug, relpath=''):
         sub_rel = f"{relpath}/{d}" if relpath else d
         sub_items = build_dir_tree(os.path.join(dirpath, d), slug, sub_rel)
         if sub_items:
-            items.append({"text": d, "items": sub_items})
+            items.append({"text": d, "collapsed": True, "items": sub_items})
 
     return items
 
