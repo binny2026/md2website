@@ -272,6 +272,35 @@ def to_ascii_slug(title, fallback='md2website'):
     return s or fallback
 
 
+def make_favicon_svg(title):
+    """根据站点标题生成首字符 favicon SVG（品牌色渐变 + 居中首字符）。"""
+    import html
+    char = ''
+    s = (title or '').strip()
+    if s:
+        first = s[0]
+        if re.search(r'[\u4e00-\u9fff]', first):
+            char = first
+        elif first.isascii() and first.isalpha():
+            char = first.upper()
+        else:
+            char = first
+    char = char or 'M'
+    esc = html.escape(char)
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0891b2"/>
+      <stop offset="0.55" stop-color="#6d5ef0"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <text x="32" y="43" font-size="30" fill="#ffffff" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="600">{esc}</text>
+</svg>
+'''
+
+
 # ---------------------------------------------------------------- 代码模板
 
 CONFIG_TMPL = '''import { defineConfig } from 'vitepress'
@@ -285,6 +314,9 @@ export default defineConfig({
   lang: 'zh-CN',
   title: '@@TITLE@@',
   description: '@@DESC@@',
+  head: [
+    ['link', { rel: 'icon', href: '/favicon.svg' }]
+  ],
   // base 优先取环境变量 VP_BASE（子模块挂门户时由 deploy.sh 注入），否则用生成时的值
   base: process.env.VP_BASE || '@@BASE@@',
   cleanUrls: true,
@@ -766,6 +798,9 @@ export default defineConfig({
   lang: 'zh-CN',
   title: '@@TITLE@@',
   description: '@@DESC@@',
+  head: [
+    ['link', { rel: 'icon', href: '/favicon.svg' }]
+  ],
   base: process.env.VP_BASE || '@@BASE@@',
   cleanUrls: true,
 
@@ -1012,8 +1047,9 @@ def gen_portal(args):
     print(f'生成门户站点: {title}')
     print(f'输出:   {out}\n')
 
-    # 动态子模块清单接口（PHP 实时扫描直接子目录）+ 首页动态卡片组件
+    # 动态子模块清单接口（PHP 实时扫描直接子目录）+ 首页动态卡片组件 + favicon
     write(os.path.join(docs, 'public', 'modules.json.php'), PORTAL_PHP)
+    write(os.path.join(docs, 'public', 'favicon.svg'), make_favicon_svg(title))
     write(os.path.join(vp, 'config.mjs'), render(PORTAL_CONFIG_TMPL, {
         'TITLE': title,
         'DESC': args.subtitle or title,
@@ -1185,6 +1221,7 @@ def main():
     }))
     write(os.path.join(docs, '.vitepress', 'theme', 'index.mjs'), THEME_INDEX)
     write(os.path.join(docs, '.vitepress', 'theme', 'custom.css'), CUSTOM_CSS)
+    write(os.path.join(docs, 'public', 'favicon.svg'), make_favicon_svg(title))
     features = '\n'.join(feature_items) if feature_items else (
         f'  - title: 开始阅读\n    details: 打开第一篇文档\n    link: /{first_link}/')
     write(os.path.join(docs, 'index.md'), render(HOME_TMPL, {
