@@ -281,10 +281,16 @@ if [ "$DO_BUILD" != "false" ]; then
 
   # 返回门户入口：子模块挂门户时，注入门户完整 URL，供 config.mjs 的 nav 显示「返回门户」
   if [ -n "${PORTAL_PROJECT:-}" ] && [ -f "$PORTAL_PROJECT/.deploy-local.yml" ]; then
-    PORTAL_REMOTE="$(grep -E '^[[:space:]]*remote_dir:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*remote_dir:[[:space:]]*//' | tr -d '[:space:]')"
-    PORTAL_DOMAIN="$(printf '%s' "$PORTAL_REMOTE" | sed -E 's#^/www/wwwroot/([^/]+).*#\1#')"
-    if [ -n "$PORTAL_DOMAIN" ] && [ "$PORTAL_DOMAIN" != "$PORTAL_REMOTE" ]; then
-      export PORTAL_URL="https://$PORTAL_DOMAIN/"
+    # 优先读取门户显式配置的 portal_url（含协议/域名/端口），否则从 remote_dir 目录名推断域名
+    PORTAL_URL_CFG="$(grep -E '^[[:space:]]*portal_url:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*portal_url:[[:space:]]*//' | tr -d '[:space:]')"
+    if [ -n "$PORTAL_URL_CFG" ]; then
+      export PORTAL_URL="$PORTAL_URL_CFG"
+    else
+      PORTAL_REMOTE="$(grep -E '^[[:space:]]*remote_dir:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*remote_dir:[[:space:]]*//' | tr -d '[:space:]')"
+      PORTAL_DOMAIN="$(printf '%s' "$PORTAL_REMOTE" | sed -E 's#^/www/wwwroot/([^/]+).*#\1#')"
+      if [ -n "$PORTAL_DOMAIN" ] && [ "$PORTAL_DOMAIN" != "$PORTAL_REMOTE" ]; then
+        export PORTAL_URL="https://$PORTAL_DOMAIN/"
+      fi
     fi
   elif [ -z "${PORTAL_PROJECT:-}" ] && [ "$PORTAL_ROLE" != "portal" ]; then
     # 校验：REMOTE_DIR 含子目录层级（形如 /www/wwwroot/域名/子目录，疑似门户子模块），
