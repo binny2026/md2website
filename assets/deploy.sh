@@ -286,6 +286,18 @@ if [ "$DO_BUILD" != "false" ]; then
     if [ -n "$PORTAL_DOMAIN" ] && [ "$PORTAL_DOMAIN" != "$PORTAL_REMOTE" ]; then
       export PORTAL_URL="https://$PORTAL_DOMAIN/"
     fi
+  elif [ -z "${PORTAL_PROJECT:-}" ] && [ "$PORTAL_ROLE" != "portal" ]; then
+    # 校验：REMOTE_DIR 含子目录层级（形如 /www/wwwroot/域名/子目录，疑似门户子模块），
+    # 但未配置 portal_project，将无法注入 PORTAL_URL，因此不会生成「返回门户」入口。
+    _rd_check="${REMOTE_DIR#/}"
+    case "$_rd_check" in
+      */*/*/*)
+        warn "REMOTE_DIR 含子目录层级（疑似门户子模块），但未配置 portal_project，将不会生成「返回门户」入口。
+    若本站点确为门户子模块，请执行：
+    python3 \"$SKILL_DIR/scripts/profile.py\" submodule --project \"$SCRIPT_DIR\""
+        ;;
+    esac
+    unset _rd_check
   fi
 
   # 门户为动态清单：首页 ModuleGrid 组件 fetch modules.json.php 实时扫描，build 时无需再同步
