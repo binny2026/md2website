@@ -1,6 +1,6 @@
 ---
 name: md2website
-description: "把一个 Markdown 文档项目（多章节教程、笔记、课件、手册）改造为静态文档站，并支持一键部署到远程服务器。自动识别章节目录、生成侧边栏导航/首页/全文搜索/代码高亮/图片放大，自动检测并修复会导致 Vue 编译器报错的语法冲突。当用户说「把 md 转成 html」「md 项目做成文档站」「课件/笔记/文档做成网站」「生成文档站」「部署文档站到服务器」「更新站点」「更新文档站」「重建站点」「同步站点」「重新发布」「部署更新」时使用。更新站点时会自动查找已生成的站点，多个时让用户选择。"
+description: "把一个 Markdown 文档项目（多章节教程、笔记、课件、手册）改造为静态文档站，并支持一键部署到远程服务器。自动识别章节目录、生成侧边栏导航/首页/全文搜索/代码高亮/图片放大，自动检测并修复会导致 Vue 编译器报错的语法冲突。当用户说「把 md 转成 html」「md 项目做成文档站」「课件/笔记/文档做成网站」「生成文档站」「部署文档站到服务器」「更新站点」「更新文档站」「重建站点」「同步站点」「重新发布」「部署更新」时使用。更新站点时会自动查找已生成的站点，多个时让用户选择。当用户说「门户」「子模块」「多站点聚合」「挂到门户」「返回门户」时，使用门户功能把多个站点聚合成一个入口。"
 ---
 
 # Markdown → 文档站
@@ -45,10 +45,10 @@ python3 $SKILL_DIR/scripts/_env.py
 脚本清单：
 
 - `scripts/_env.py` — 环境探测（Python / Node 版本、安装指引）
-- `scripts/init.py` — 扫描源目录，生成完整文档站项目，并自动修复语法冲突、改写跨章节死链、为合集/多级目录生成分组侧边栏
+- `scripts/init.py` — 扫描源目录，生成完整文档站项目，并自动修复语法冲突、改写跨章节死链、为合集/多级目录生成分组侧边栏；`--portal` 生成门户站点（聚合子模块）
 - `scripts/scan.py` — 扫描语法冲突与缺失图片
 - `scripts/fix.py` — 修复 `<img>` 标签与错误图片路径
-- `scripts/profile.py` — 部署配置档管理（set/bind/cache/list/show/check）
+- `scripts/profile.py` — 部署配置档管理（set/bind/cache/list/show/check/wizard/submodule）
 - `scripts/sites.py` — 查找已生成的站点（list/select，支持 JSON 输出）
 - `scripts/update.py` — 更新已有站点（重建 + 构建，可选部署）
 - `assets/deploy.sh` — 一键部署脚本（init 时复制到项目里）
@@ -270,6 +270,42 @@ python3 "$SKILL_DIR"/scripts/update.py "<站点目录>" --dry-run  # 只看计�
 | 改已有章节内容 | 覆盖 `docs/<slug>/index.md`，重新 build |
 | 加图片 | 放进该章 `assets/`，正文用相对路径 |
 | 新增章节 | 优先跑 `update.py`；手改则必须在 `config.mjs` 的 chapters 数组加一条 |
+
+## 门户与子模块（多站点聚合）
+
+把多个站点聚合成一个「门户」入口：门户首页列出所有子模块，点击进入各子站点；子模块顶部导航带「返回门户」入口。
+
+### 生成门户
+
+```bash
+python3 "$SKILL_DIR"/scripts/init.py --portal \
+    --out "<门户输出目录>" --title "文档门户" --name portal
+```
+
+门户项目标记 `role=portal`，首页通过 `modules.json.php`（PHP）实时扫描直接子目录里的 `site.json`，**刷新页面即更新**，无需重新部署门户。
+
+### 把站点挂为子模块
+
+在站点目录执行交互向导：
+
+```bash
+python3 "$SKILL_DIR"/scripts/profile.py submodule --project "<站点目录>"
+```
+
+向导询问门户项目路径 + 子目录名，自动推导并写入 `.deploy-local.yml`：`REMOTE_DIR = 门户路径/<子目录名>/`、`SITE_BASE = 门户 SITE_BASE + <子目录名>/`、`PORTAL_PROJECT = 门户项目路径`。
+
+### 部署顺序
+
+1. 先部署门户（`./deploy.sh`），确认服务器门户目录已存在。
+2. 再部署子模块（`./deploy.sh`）：自动写 `site.json` 并触发门户重建。
+
+### 命名规则
+
+站点标识名（`package.json` name、子目录默认名）自动生成：英文/数字保留，中文标题转拼音全拼（依赖 `pypinyin`，缺失则回退英文）。如「我的笔记」→ `wodebiji`。
+
+### 子模块返回门户
+
+子模块挂门户后，顶部导航自动出现「返回门户」入口（部署时由 `deploy.sh` 从门户 `REMOTE_DIR` 推断门户 URL 注入）。
 
 ## 常见故障
 

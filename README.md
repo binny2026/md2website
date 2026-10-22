@@ -35,6 +35,7 @@ git clone git@github.com:binny2026/md2website.git ~/md2website && cd ~/md2websit
 | 一键部署 | 打包 → 上传 → 远程解压 → 校验，支持 SSH 密钥或账号密码 |
 | 站点自动登记与更新 | 说「更新站点」即可自动查找并原地重建，多个站点时让你选 |
 | 配置隔离 | 服务器信息只存站点目录的 `.deploy-local.yml`（权限 600，不进 git） |
+| 门户与子模块 | 用 `--portal` 生成门户聚合多个站点；子模块挂载后门户首页刷新即更新 |
 
 ---
 
@@ -42,10 +43,11 @@ git clone git@github.com:binny2026/md2website.git ~/md2website && cd ~/md2websit
 
 | 依赖 | 版本 | 用途 | 检查 |
 | --- | --- | --- | --- |
-| Python | 3.8+ | 运行生成脚本（仅标准库） | `python3 --version` |
+| Python | 3.8+ | 运行生成脚本（标准库，pypinyin 可选） | `python3 --version` |
 | Node.js | **18+** | 构建站点（必需） | `node --version` |
 | tar / ssh / scp | 系统自带 | 仅部署需要 | `tar --version` |
 | sshpass | 可选 | 用账号密码登录服务器时必需 | `sshpass -V` |
+| pypinyin | 可选 | 中文标题转拼音目录名时必需（缺则回退英文） | `python3 -c "import pypinyin"` |
 
 没装 Node.js：
 
