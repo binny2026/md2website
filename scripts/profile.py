@@ -15,6 +15,7 @@
 项目会生成 .deploy-profile 文件记录自己用哪个配置档（可安全提交）。
 """
 import argparse
+import json
 import os
 import re
 import sys
@@ -37,6 +38,7 @@ FIELDS = [
     ('REMOTE_TMP', '远程临时目录', False),
     ('DIST_NAME', '产物文件夹名（上传时）', False),
     ('UPLOAD_WITH_DIR', '是否带文件夹一起上传 true|false', False),
+    ('PORTAL_PROJECT', '门户项目本地绝对路径（子模块挂门户时填写）', False),
 ]
 
 REQUIRED = [k for k, _, req in FIELDS if req]
@@ -245,6 +247,7 @@ FIELD_YML = {
     'REMOTE_DIR': 'remote_dir', 'SSH_KEY': 'ssh_key', 'SITE_BASE': 'site_base',
     'CLEAN_MODE': 'clean_mode', 'BUILD_BEFORE_DEPLOY': 'build_before_deploy',
     'REMOTE_TMP': 'remote_tmp', 'DIST_NAME': 'dist_name', 'UPLOAD_WITH_DIR': 'upload_with_dir',
+    'PORTAL_PROJECT': 'portal_project',
 }
 
 
@@ -349,6 +352,110 @@ def cmd_wizard(args):
     return 0
 
 
+def _parse_yml(path):
+    """解析 .deploy-local.yml，返回大写 key 的 dict。"""
+    data = {}
+    if not os.path.isfile(path):
+        return data
+    rev = {v: k for k, v in FIELD_YML.items()}
+    for line in open(path, encoding='utf-8'):
+        line = line.strip()
+        if not line or line.startswith('#') or ':' not in line:
+            continue
+        k, v = line.split(':', 1)
+        k = k.strip()
+        v = strip_inline_comment(v.strip())
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in '"\'':
+            v = v[1:-1]
+        key = rev.get(k)
+        if key:
+            data[key] = v
+    return data
+
+
+def read_deploy_config(project):
+    """读取站点部署配置（优先 .deploy-local.yml，其次 .deploy-profile 配置档），返回大写 key dict。"""
+    data = _parse_yml(os.path.join(project, LOCAL_YML))
+    if data.get('HOST') and data.get('REMOTE_DIR') and data.get('SITE_BASE'):
+        return data
+    mark = os.path.join(project, PROFILE_MARK)
+    if os.path.isfile(mark):
+        try:
+            name = sanitize(open(mark, encoding='utf-8').read().strip())
+        except OSError:
+            name = ''
+        if name:
+            prof = read_profile(name)
+            if prof:
+                return prof
+    return data
+
+
+def cmd_submodule(args):
+    """交互式把当前站点挂载为门户子模块：选门户 + 子目录名，自动推导 REMOTE_DIR/SITE_BASE/PORTAL_PROJECT。"""
+    project = os.path.abspath(args.project)
+    if not os.path.isdir(project):
+        print(f'目录不存在: {project}', file=sys.stderr)
+        return 1
+
+    print('把当前站点挂载为门户子模块（自动推导部署目录与 base）')
+
+    portal = input('门户项目本地绝对路径（必填）: ').strip()
+    if not portal:
+        print('未输入门户项目路径，已取消', file=sys.stderr)
+        return 1
+    portal = os.path.abspath(os.path.expanduser(portal))
+    if not os.path.isdir(portal):
+        print(f'门户项目目录不存在: {portal}', file=sys.stderr)
+        return 1
+
+    pconf = read_deploy_config(portal)
+    if not (pconf.get('HOST') and pconf.get('REMOTE_DIR') and pconf.get('SITE_BASE')):
+        print(f'门户项目缺少部署配置（需先配置 HOST/REMOTE_DIR/SITE_BASE）: {portal}', file=sys.stderr)
+        print('请先在门户项目执行: python3 profile.py wizard --project "<门户>"', file=sys.stderr)
+        return 1
+
+    default_name = None
+    pkg = os.path.join(project, 'package.json')
+    if os.path.isfile(pkg):
+        try:
+            default_name = json.load(open(pkg, encoding='utf-8')).get('name')
+        except (OSError, ValueError):
+            default_name = None
+    if not default_name:
+        default_name = re.sub(r'[^A-Za-z0-9-]+', '-',
+                              os.path.basename(project).lower()).strip('-') or 'module'
+
+    sub = input(f'子目录名（默认 {default_name}）: ').strip() or default_name
+    sub = sub.strip('/')
+    if not sub:
+        print('子目录名不能为空，已取消', file=sys.stderr)
+        return 1
+
+    site_base = pconf['SITE_BASE']
+    if not site_base.endswith('/'):
+        site_base += '/'
+    remote_dir = pconf['REMOTE_DIR'].rstrip('/') + '/' + sub
+    site_base = site_base + sub + '/'
+
+    data = {
+        'HOST': pconf.get('HOST', ''),
+        'PORT': pconf.get('PORT', '22'),
+        'USER': pconf.get('USER', ''),
+        'PASSWORD': pconf.get('PASSWORD', ''),
+        'SSH_KEY': pconf.get('SSH_KEY', ''),
+        'REMOTE_DIR': remote_dir,
+        'SITE_BASE': site_base,
+        'PORTAL_PROJECT': portal,
+    }
+    local = _write_local_yml(project, data, 'submodule 交互配置')
+    print(f'已写入: {local}')
+    print(f'  REMOTE_DIR     = {remote_dir}')
+    print(f'  SITE_BASE      = {site_base}')
+    print(f'  PORTAL_PROJECT = {portal}')
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description='部署配置档管理')
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -366,12 +473,14 @@ def main():
     p.add_argument('--name')
     p = sub.add_parser('wizard')
     p.add_argument('--project', required=True)
+    p = sub.add_parser('submodule')
+    p.add_argument('--project', required=True)
 
     args = ap.parse_args()
     return {
         'path': cmd_path, 'show': cmd_show, 'check': cmd_check,
         'set': cmd_set, 'list': cmd_list, 'bind': cmd_bind, 'cache': cmd_cache,
-        'wizard': cmd_wizard,
+        'wizard': cmd_wizard, 'submodule': cmd_submodule,
     }[args.cmd](args)
 
 

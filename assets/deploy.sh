@@ -145,7 +145,7 @@ load_conf() {
     val="${line#*=}"
     key="$(printf '%s' "$key" | tr -d '[:space:]')"
     case "$key" in
-      HOST|PORT|USER|PASSWORD|REMOTE_DIR|SSH_KEY|SSH_KEY_PASSPHRASE|SITE_BASE|CLEAN_MODE|BUILD_BEFORE_DEPLOY|REMOTE_TMP|DIST_NAME|UPLOAD_WITH_DIR) ;;
+      HOST|PORT|USER|PASSWORD|REMOTE_DIR|SSH_KEY|SSH_KEY_PASSPHRASE|SITE_BASE|CLEAN_MODE|BUILD_BEFORE_DEPLOY|REMOTE_TMP|DIST_NAME|UPLOAD_WITH_DIR|PORTAL_PROJECT) ;;
       *) continue ;;
     esac
     # 去掉行尾注释（# 前需有空白），再处理引号
@@ -192,6 +192,7 @@ load_yml() {
       remote_tmp|REMOTE_TMP) key="REMOTE_TMP" ;;
       dist_name|DIST_NAME) key="DIST_NAME" ;;
       upload_with_dir|UPLOAD_WITH_DIR) key="UPLOAD_WITH_DIR" ;;
+      portal_project|PORTAL_PROJECT) key="PORTAL_PROJECT" ;;
       *) continue ;;
     esac
     val="${val//\$HOME/$HOME}"
@@ -215,6 +216,15 @@ CLEAN_MODE="${CLEAN_MODE:-manifest}"
 [ -z "$DO_BUILD" ] && DO_BUILD="${BUILD_BEFORE_DEPLOY:-true}"
 DIST_NAME="${DIST_NAME:-dist}"
 UPLOAD_WITH_DIR="${UPLOAD_WITH_DIR:-false}"
+
+# ---------- 站点角色与元数据（门户 / 子模块 / 独立） ----------
+PORTAL_ROLE=""
+SITE_TITLE=""
+if [ -f "$SCRIPT_DIR/.md2website.json" ]; then
+  PORTAL_ROLE="$(grep -o '"role": *"[^"]*"' "$SCRIPT_DIR/.md2website.json" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)"$/\1/' || true)"
+  SITE_TITLE="$(grep -o '"title": *"[^"]*"' "$SCRIPT_DIR/.md2website.json" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)"$/\1/' || true)"
+fi
+SUBDIR_NAME="$(basename "$REMOTE_DIR")"
 
 # DIST_NAME 会被用于本地拼路径与打包，必须是单一目录名
 case "$DIST_NAME" in
@@ -266,6 +276,20 @@ if [ "$DO_BUILD" != "false" ]; then
 
   cd "$SCRIPT_DIR"
 
+  # base 注入：用配置的 SITE_BASE 覆盖 config.mjs 里的 base（子模块挂门户时指向 /子目录/）
+  export VP_BASE="$SITE_BASE"
+
+  # 返回门户入口：子模块挂门户时，注入门户完整 URL，供 config.mjs 的 nav 显示「返回门户」
+  if [ -n "${PORTAL_PROJECT:-}" ] && [ -f "$PORTAL_PROJECT/.deploy-local.yml" ]; then
+    PORTAL_REMOTE="$(grep -E '^[[:space:]]*remote_dir:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*remote_dir:[[:space:]]*//' | tr -d '[:space:]')"
+    PORTAL_DOMAIN="$(printf '%s' "$PORTAL_REMOTE" | sed -E 's#^/www/wwwroot/([^/]+).*#\1#')"
+    if [ -n "$PORTAL_DOMAIN" ] && [ "$PORTAL_DOMAIN" != "$PORTAL_REMOTE" ]; then
+      export PORTAL_URL="https://$PORTAL_DOMAIN/"
+    fi
+  fi
+
+  # 门户为动态清单：首页 ModuleGrid 组件 fetch modules.json.php 实时扫描，build 时无需再同步
+
   # 依赖未安装则自动安装（标准 npm install）
   if [ ! -f "node_modules/vitepress/package.json" ]; then
     info "首次构建，安装依赖（约 1-3 分钟）"
@@ -280,6 +304,15 @@ else
 fi
 
 [ -d "$DIST_DIR" ] || die "找不到构建产物: $DIST_DIR"
+
+# 写 site.json（门户扫描子目录时据此识别并取标题）；门户自身不写
+if [ "$PORTAL_ROLE" != "portal" ]; then
+  export MD2VP_SITE_TITLE="${SITE_TITLE:-$SUBDIR_NAME}"
+  export MD2VP_DIST="$DIST_DIR"
+  python3 -c "import json,os; json.dump({'title': os.environ['MD2VP_SITE_TITLE'], 'description': ''}, open(os.path.join(os.environ['MD2VP_DIST'], 'site.json'), 'w', encoding='utf-8'), ensure_ascii=False)" \
+    || warn "写入 site.json 失败（门户将用目录名作为标题）"
+fi
+
 PAGE_COUNT=$(find "$DIST_DIR" -name 'index.html' | wc -l | tr -d ' ')
 IMG_COUNT=$(find "$DIST_DIR" -type f \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' -o -name '*.gif' -o -name '*.svg' -o -name '*.webp' \) | wc -l | tr -d ' ')
 [ "$PAGE_COUNT" -gt 0 ] || die "产物中没有页面，请先构建"
@@ -434,8 +467,24 @@ REMOTE_INDEX_OK=$(ssh_run "test -f '$INDEX_PATH' && echo yes" 2>/dev/null || tru
 REMOTE_FILE_COUNT=$(ssh_run "find '$REMOTE_DIR' -type f | wc -l" | tr -d ' ')
 ok "线上文件数：$REMOTE_FILE_COUNT"
 
-DOMAIN="${HOST}"
+# 站点域名：从 REMOTE_DIR 推断（宝塔惯例 /www/wwwroot/<域名>），推断不出再回退 HOST
+DOMAIN="$(printf '%s' "$REMOTE_DIR" | sed -E 's#^/www/wwwroot/([^/]+).*#\1#')"
+case "$DOMAIN" in
+  ''|*/*) DOMAIN="${HOST}" ;;
+esac
+URL_PATH="$(printf '%s' "$REMOTE_DIR" | sed -E 's#^/www/wwwroot/[^/]+##')"
 printf '\n%s部署成功%s\n' "$C_OK" "$C_RESET"
 printf '  时间    %s\n' "$STAMP"
-printf '  地址    https://%s/\n' "$DOMAIN"
+printf '  地址    https://%s%s/\n' "$DOMAIN" "$URL_PATH"
 printf '  目录    %s\n\n' "$REMOTE_DIR"
+
+# 子模块：配置了 PORTAL_PROJECT 时，自动重建并上传门户
+if [ "$PORTAL_ROLE" != "portal" ] && [ -n "${PORTAL_PROJECT:-}" ]; then
+  if [ -d "$PORTAL_PROJECT" ] && [ -x "$PORTAL_PROJECT/deploy.sh" ]; then
+    info "自动重建门户：$PORTAL_PROJECT"
+    ( cd "$PORTAL_PROJECT" && ./deploy.sh ) \
+      || warn "门户重建失败，可在门户项目手动执行 ./deploy.sh"
+  else
+    warn "PORTAL_PROJECT 指向的门户项目不可用，跳过自动重建：$PORTAL_PROJECT"
+  fi
+fi

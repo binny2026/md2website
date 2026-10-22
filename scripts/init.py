@@ -14,6 +14,7 @@
 --chapters: 按章节目录生成导航（默认自动判断：顶层子目录都含 md 时视为章节）
 """
 import argparse
+import datetime
 import json
 import os
 import re
@@ -23,6 +24,65 @@ import sys
 IMG_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'}
 SKIP_DIRS = {'node_modules', '.git', '.vitepress', 'dist', 'build', '.cache', '__pycache__'}
 SKIP_FILES = {'.DS_Store'}
+
+META_FILE = '.md2website.json'
+REGISTRY_DIR = os.path.join(os.path.expanduser('~'), '.md2website')
+REGISTRY_FILE = os.path.join(REGISTRY_DIR, 'sites.json')
+# --force 重建时清理的生成物；部署配置、依赖与其他用户文件一律保留
+GENERATED_ITEMS = ('docs', 'package.json', '.gitignore', 'DEPLOY.md', 'deploy.sh')
+
+
+def _now():
+    return datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def register_site(out, meta):
+    """登记到 ~/.md2website/sites.json，供 sites.py / update.py 查找"""
+    try:
+        os.makedirs(REGISTRY_DIR, exist_ok=True)
+        data = {'version': 1, 'sites': []}
+        if os.path.isfile(REGISTRY_FILE):
+            try:
+                with open(REGISTRY_FILE, encoding='utf-8') as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict) and isinstance(loaded.get('sites'), list):
+                    data = loaded
+            except (OSError, ValueError):
+                pass
+        entry = {'path': out, **meta}
+        data['sites'] = [s for s in data['sites'] if s.get('path') != out] + [entry]
+        with open(REGISTRY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write('\n')
+    except OSError as e:
+        print(f'  ! 站点登记失败（不影响站点生成）：{e}', file=sys.stderr)
+
+
+def write_meta(out, src, title, site_name, base, role=None):
+    """写入站点元数据，记录源目录；更新站点时据此重新生成"""
+    path = os.path.join(out, META_FILE)
+    old = {}
+    if os.path.isfile(path):
+        try:
+            with open(path, encoding='utf-8') as f:
+                old = json.load(f)
+        except (OSError, ValueError):
+            old = {}
+    meta = {
+        'name': site_name,
+        'title': title,
+        'source': src,
+        'base': base,
+        'created_at': old.get('created_at') or _now(),
+        'updated_at': _now(),
+    }
+    if role:
+        meta['role'] = role
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+        f.write('\n')
+    register_site(out, meta)
+    return meta
 
 # ---------------------------------------------------------------- 结构扫描
 
@@ -192,6 +252,26 @@ def slugify(name, used):
     used.add(s)
     return s
 
+
+def to_ascii_slug(title, fallback='md2website'):
+    """标题 → ASCII 标识名：英文/数字保留，中文转拼音全拼（依赖 pypinyin，缺失则回退）。"""
+    if not title:
+        return fallback
+    if not re.search(r'[\u4e00-\u9fff]', title):
+        s = re.sub(r'[^a-z0-9-]+', '-', title.lower()).strip('-')
+        return s or fallback
+    try:
+        from pypinyin import lazy_pinyin
+        s = ''.join(lazy_pinyin(title))
+        s = re.sub(r'[^a-z0-9]+', '', s.lower())
+        if s:
+            return s
+    except ImportError:
+        pass
+    s = re.sub(r'[^a-z0-9-]+', '-', title.lower()).strip('-')
+    return s or fallback
+
+
 # ---------------------------------------------------------------- 代码模板
 
 CONFIG_TMPL = '''import { defineConfig } from 'vitepress'
@@ -205,7 +285,8 @@ export default defineConfig({
   lang: 'zh-CN',
   title: '@@TITLE@@',
   description: '@@DESC@@',
-  base: '@@BASE@@',
+  // base 优先取环境变量 VP_BASE（子模块挂门户时由 deploy.sh 注入），否则用生成时的值
+  base: process.env.VP_BASE || '@@BASE@@',
   cleanUrls: true,
 
   markdown: {
@@ -248,7 +329,9 @@ export default defineConfig({
     outline: { level: [2, 3], label: '本页目录' },
     nav: [
       { text: '首页', link: '/' },
-      { text: '文档', link: '/@@FIRST@@/' }
+      { text: '文档', link: '/@@FIRST@@/' },
+      // 子模块挂门户时，deploy.sh 会注入 PORTAL_URL 环境变量，添加「返回门户」入口
+      ...(process.env.PORTAL_URL ? [{ text: '返回门户', link: process.env.PORTAL_URL }] : [])
     ],
     sidebar: [
       {
@@ -325,6 +408,148 @@ export default {
 }
 '''
 
+# 门户主题：额外注册 ModuleGrid 组件（首页动态加载子模块清单）
+PORTAL_THEME_INDEX = '''import DefaultTheme from 'vitepress/theme'
+import { onMounted, watch, nextTick } from 'vue'
+import { useRoute } from 'vitepress'
+import ModuleGrid from './ModuleGrid.vue'
+import './custom.css'
+
+function installZoom() {
+  document.querySelectorAll('.vp-doc img').forEach((img) => {
+    if (img.dataset.zoomBound) return
+    img.dataset.zoomBound = '1'
+    img.classList.add('zoomable')
+    img.addEventListener('click', () => {
+      const mask = document.createElement('div')
+      mask.className = 'img-zoom-mask'
+      const big = document.createElement('img')
+      big.src = img.src
+      big.alt = img.alt || ''
+      mask.appendChild(big)
+      document.body.appendChild(mask)
+      requestAnimationFrame(() => mask.classList.add('open'))
+      const close = () => {
+        mask.classList.remove('open')
+        setTimeout(() => mask.remove(), 180)
+        document.removeEventListener('keydown', onKey)
+      }
+      const onKey = (e) => e.key === 'Escape' && close()
+      mask.addEventListener('click', close)
+      document.addEventListener('keydown', onKey)
+    })
+  })
+}
+
+export default {
+  extends: DefaultTheme,
+  enhanceApp({ app }) {
+    app.component('ModuleGrid', ModuleGrid)
+  },
+  setup() {
+    const route = useRoute()
+    const run = () => nextTick(() => setTimeout(installZoom, 60))
+    onMounted(run)
+    watch(() => route.path, run)
+  }
+}
+'''
+
+# 门户首页动态子模块卡片组件（fetch modules.json.php）
+PORTAL_MODULE_GRID = '''<script setup>
+import { ref, onMounted } from 'vue'
+import { withBase } from 'vitepress'
+
+const modules = ref([])
+const loading = ref(true)
+
+onMounted(async () => {
+  try {
+    const res = await fetch(withBase('/modules.json.php'))
+    if (res.ok) modules.value = await res.json()
+  } catch (e) {
+    modules.value = []
+  } finally {
+    loading.value = false
+  }
+})
+</script>
+
+<template>
+  <div class="module-grid">
+    <a v-for="m in modules" :key="m.name" :href="m.link" class="module-card">
+      <div class="module-card-title">{{ m.title }}</div>
+      <div class="module-card-desc">{{ m.description }}</div>
+    </a>
+    <p v-if="!loading && modules.length === 0" class="module-empty">暂无子模块，部署后自动出现</p>
+  </div>
+</template>
+
+<style scoped>
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+.module-card {
+  display: block;
+  padding: 16px 20px;
+  border: 1px solid var(--vp-c-border);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.module-card:hover {
+  border-color: var(--vp-c-brand-1);
+  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.16);
+  transform: translateY(-2px);
+}
+.module-card-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.module-card-desc {
+  font-size: 14px;
+  color: var(--vp-c-text-2);
+  word-break: break-all;
+}
+.module-empty {
+  color: var(--vp-c-text-2);
+}
+</style>
+'''
+
+# 门户子模块清单动态接口（PHP 实时扫描直接子目录的 site.json）
+PORTAL_PHP = '''<?php
+// 门户子模块清单：实时扫描直接子目录的 site.json，返回 JSON
+// 由 md2website skill 生成，供门户首页 ModuleGrid 组件 fetch 使用
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
+$base = rtrim(__DIR__, '/');
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+$origin = $host ? ($scheme . '://' . $host) : '';
+$modules = [];
+foreach (glob($base . '/*', GLOB_ONLYDIR) as $dir) {
+    $name = basename($dir);
+    $site = $dir . '/site.json';
+    if (!is_file($site)) continue;
+    $meta = json_decode((string)file_get_contents($site), true);
+    if (!is_array($meta)) $meta = [];
+    $modules[] = [
+        'name' => $name,
+        'title' => (isset($meta['title']) && $meta['title'] !== '') ? $meta['title'] : $name,
+        'description' => isset($meta['description']) ? $meta['description'] : '',
+        'link' => $origin ? ($origin . '/' . $name . '/') : ('/' . $name . '/'),
+    ];
+}
+usort($modules, function ($a, $b) { return strcmp($a['name'], $b['name']); });
+echo json_encode($modules, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+'''
+
 CUSTOM_CSS = '''/* ============ 科技感主题（深/浅双主题） ============ */
 
 :root {
@@ -337,6 +562,33 @@ CUSTOM_CSS = '''/* ============ 科技感主题（深/浅双主题） ==========
   --tech-glow-1: rgba(14, 165, 233, 0.09);
   --tech-glow-2: rgba(168, 85, 247, 0.07);
   --tech-grid: rgba(99, 102, 241, 0.05);
+  /* 布局宽度：侧边栏 320；整站上限按视口分档，避免视口小于上限时左侧内容被侧边栏压住 */
+  --vp-sidebar-width: 320px;
+  --vp-layout-max-width: 1440px;
+}
+
+@media (min-width: 1560px) {
+  :root { --vp-layout-max-width: 1560px; }
+}
+
+@media (min-width: 1660px) {
+  :root { --vp-layout-max-width: 1640px; }
+}
+
+/* 正文阅读宽度（默认 688，默认主题里为 scoped 样式，需 !important 覆盖） */
+.VPDoc.has-aside .content-container {
+  max-width: 860px !important;
+}
+
+/* 右侧「本页目录」加宽（默认内容区 224 / 外层 256；宽屏才生效，避免挤压正文） */
+@media (min-width: 1660px) {
+  .VPDoc .aside {
+    max-width: 312px;
+  }
+  .VPDoc .aside .aside-container,
+  .VPDoc .aside .aside-curtain {
+    width: 280px;
+  }
 }
 
 .dark {
@@ -503,6 +755,93 @@ features:
 - 修改内容后执行 `./deploy.sh` 即可重新构建并部署
 '''
 
+# 门户站点：首页通过 ModuleGrid 组件动态加载子模块（fetch modules.json.php）
+PORTAL_CONFIG_TMPL = '''import { defineConfig } from 'vitepress'
+
+const nav = [
+  { text: '首页', link: '/' },
+]
+
+export default defineConfig({
+  lang: 'zh-CN',
+  title: '@@TITLE@@',
+  description: '@@DESC@@',
+  base: process.env.VP_BASE || '@@BASE@@',
+  cleanUrls: true,
+
+  markdown: {
+    lineNumbers: true,
+    theme: { light: 'github-light', dark: 'github-dark' },
+    config(md) {
+      md.core.ruler.after('inline', 'escape_vue_syntax', (state) => {
+        for (const token of state.tokens) {
+          if (token.type !== 'inline' || !token.children) continue
+          for (const child of token.children) {
+            if (child.type === 'html_inline') {
+              const raw = child.content
+              if (/^<(?:https?:\\/\\/|mailto:|ftp:\\/\\/)/i.test(raw) && raw.length > 2) {
+                const inner = raw.slice(1, -1)
+                child.type = 'link'
+                child.tag = 'a'
+                child.attrs = [['href', inner]]
+                child.markup = 'autolink'
+                child.content = ''
+                child.children = [{ type: 'text', content: inner, level: 0 }]
+              } else if (/^<[A-Za-z][\\w.\\-]*(?::[\\w.\\-]+)?>/.test(raw)) {
+                child.type = 'text'
+                child.markup = ''
+              }
+            } else if (child.type === 'text' && child.content.includes('{')) {
+              child.content = child.content
+                .replace(/\\{\\{/g, '&#123;&#123;')
+                .replace(/\\}\\}/g, '&#125;&#125;')
+            }
+          }
+        }
+      })
+    }
+  },
+
+  themeConfig: {
+    outline: { level: [2, 3], label: '本页目录' },
+    nav,
+    sidebar: [],
+    search: {
+      provider: 'local',
+      options: {
+        translations: {
+          button: { buttonText: '搜索', buttonAriaLabel: '搜索文档' },
+          modal: {
+            noResultsText: '没有找到结果',
+            resetButtonTitle: '清除',
+            footer: { selectText: '选择', navigateText: '切换', closeText: '关闭' }
+          }
+        }
+      }
+    },
+    docFooter: { prev: '上一篇', next: '下一篇' },
+    outlineTitle: '本页目录',
+    returnToTopLabel: '回到顶部',
+    sidebarMenuLabel: '目录',
+    darkModeSwitchLabel: '主题',
+    lastUpdated: { text: '最后更新' }
+  }
+})
+'''
+
+# 门户首页：features 由 portal_sync.py 扫描子目录后重写
+PORTAL_HOME_TMPL = '''---
+layout: home
+
+hero:
+  name: @@TITLE@@
+  text: @@SUBTITLE@@
+  tagline: @@TAGLINE@@
+---
+
+<ModuleGrid />
+'''
+
 PACKAGE_JSON = '''{
   "name": "@@NAME@@",
   "version": "1.0.0",
@@ -530,6 +869,9 @@ node_modules/
 # 构建产物
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+
+# 更新前的配置备份
+.backup/
 '''
 
 DEPLOY_README = '''# 部署配置说明
@@ -643,15 +985,89 @@ def copy_chapter(src_dir, dst_dir):
     return count
 
 
+def gen_portal(args):
+    """生成门户站点骨架：顶部导航/首页由 modules.json 驱动，聚合子模块入口。"""
+    out = os.path.abspath(args.out or os.path.join(os.getcwd(), 'outputs', 'md2website-portal'))
+    if os.path.exists(out):
+        if not args.force:
+            print(f'输出目录已存在，拒绝覆盖: {out}\n'
+                  f'如需重建请加 --force，或指定其他 --out', file=sys.stderr)
+            return 1
+        for item in GENERATED_ITEMS:
+            p = os.path.join(out, item)
+            if os.path.isdir(p):
+                shutil.rmtree(p)
+            elif os.path.exists(p):
+                os.remove(p)
+        print('已清理旧生成物（保留 .deploy-local.yml 与 node_modules）')
+
+    title = args.title or '文档门户'
+    site_name = args.name or to_ascii_slug(title, fallback='portal')
+    base = args.base if args.base.endswith('/') else args.base + '/'
+
+    docs = os.path.join(out, 'docs')
+    vp = os.path.join(docs, '.vitepress')
+    os.makedirs(vp, exist_ok=True)
+
+    print(f'生成门户站点: {title}')
+    print(f'输出:   {out}\n')
+
+    # 动态子模块清单接口（PHP 实时扫描直接子目录）+ 首页动态卡片组件
+    write(os.path.join(docs, 'public', 'modules.json.php'), PORTAL_PHP)
+    write(os.path.join(vp, 'config.mjs'), render(PORTAL_CONFIG_TMPL, {
+        'TITLE': title,
+        'DESC': args.subtitle or title,
+        'BASE': base,
+    }))
+    write(os.path.join(vp, 'theme', 'index.mjs'), PORTAL_THEME_INDEX)
+    write(os.path.join(vp, 'theme', 'ModuleGrid.vue'), PORTAL_MODULE_GRID)
+    write(os.path.join(vp, 'theme', 'custom.css'), CUSTOM_CSS)
+
+    write(os.path.join(docs, 'index.md'), render(PORTAL_HOME_TMPL, {
+        'TITLE': title,
+        'SUBTITLE': args.subtitle or '文档门户',
+        'TAGLINE': '聚合所有子模块的统一入口',
+    }))
+    write(os.path.join(out, 'package.json'), render(PACKAGE_JSON, {'NAME': site_name}))
+    write(os.path.join(out, '.gitignore'), GITIGNORE)
+    default_profile = re.sub(r'[^A-Za-z0-9._-]+', '-', os.path.basename(out).lower()).strip('-') or 'default'
+    write(os.path.join(out, 'DEPLOY.md'), render(DEPLOY_README, {'NAME': default_profile}))
+
+    skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    deploy_src = os.path.join(skill_dir, 'assets', 'deploy.sh')
+    if os.path.isfile(deploy_src):
+        shutil.copy2(deploy_src, os.path.join(out, 'deploy.sh'))
+        os.chmod(os.path.join(out, 'deploy.sh'), 0o755)
+
+    write_meta(out, '', title, site_name, base, role='portal')
+    print(f'门户站点生成完成：{out}')
+    print('下一步：')
+    print(f'  cd {out}')
+    print('  python3 <skill>/scripts/profile.py wizard --project .   # 配置服务器部署信息')
+    print('  npm install && npm run dev                              # 本地预览')
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('source')
+    ap.add_argument('source', nargs='?', default=None,
+                    help='Markdown 源目录（--portal 模式可省略）')
     ap.add_argument('--out', default=None)
     ap.add_argument('--title', default=None)
     ap.add_argument('--subtitle', default=None)
     ap.add_argument('--name', default=None)
     ap.add_argument('--base', default='/')
+    ap.add_argument('--portal', action='store_true',
+                    help='生成门户站点（聚合子模块入口，无需源目录）')
+    ap.add_argument('--force', action='store_true',
+                    help='原地重建：清理旧生成物后重新生成，保留部署配置与依赖')
     args = ap.parse_args()
+
+    if args.portal:
+        return gen_portal(args)
+
+    if not args.source:
+        ap.error('缺少 Markdown 源目录（或用 --portal 生成门户）')
 
     src = os.path.abspath(args.source)
     if not os.path.isdir(src):
@@ -660,12 +1076,20 @@ def main():
 
     out = os.path.abspath(args.out or os.path.join(os.getcwd(), 'outputs', 'md2website-site'))
     if os.path.exists(out):
-        print(f'输出目录已存在，拒绝覆盖: {out}\n'
-              f'如需重建请先手动删除，或指定其他 --out', file=sys.stderr)
-        return 1
+        if not args.force:
+            print(f'输出目录已存在，拒绝覆盖: {out}\n'
+                  f'如需重建请加 --force，或指定其他 --out', file=sys.stderr)
+            return 1
+        for item in GENERATED_ITEMS:
+            p = os.path.join(out, item)
+            if os.path.isdir(p):
+                shutil.rmtree(p)
+            elif os.path.exists(p):
+                os.remove(p)
+        print('已清理旧生成物（保留 .deploy-local.yml 与 node_modules）')
 
     title = args.title or os.path.basename(src)
-    site_name = args.name or re.sub(r'[^a-z0-9-]+', '-', title.lower()).strip('-') or 'md2website'
+    site_name = args.name or to_ascii_slug(title)
     base = args.base if args.base.endswith('/') else args.base + '/'
 
     chapters, root_mds = find_md_dirs(src)
@@ -784,6 +1208,9 @@ def main():
     if os.path.isfile(deploy_src):
         shutil.copy2(deploy_src, os.path.join(out, 'deploy.sh'))
         os.chmod(os.path.join(out, 'deploy.sh'), 0o755)
+
+    # 记录源目录与站点信息，供 sites.py / update.py 后续更新
+    write_meta(out, src, title, site_name, base)
 
     # 自动执行一次语法修复，避免用户首次构建就失败
     fixed = 0

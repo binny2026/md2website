@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 428" width="100%" height="auto" role="img" aria-label="门户与子模块部署架构图">
+  <style>
+    .t  { fill: #171717; font: 400 14px/20px "SF Pro Text","PingFang SC",system-ui,sans-serif; }
+    .th { fill: #171717; font: 500 14px/20px "SF Pro Text","PingFang SC",system-ui,sans-serif; }
+    .ts { fill: #52525B; font: 400 12px/18px "SF Pro Text","PingFang SC",system-ui,sans-serif; }
+    .bt { fill: #004D26; font: 500 14px/20px "SF Pro Text","PingFang SC",system-ui,sans-serif; }
+    .bs { fill: #004D26; font: 400 12px/18px "SF Pro Text","PingFang SC",system-ui,sans-serif; opacity: .82; }
+    .boundary { fill: #EFEFF2; stroke: rgba(23,23,23,0.12); stroke-width: 1; stroke-dasharray: 5 5; }
+    .nested   { fill: #F7F7F8; stroke: rgba(23,23,23,0.12); stroke-width: 1; stroke-dasharray: 4 4; }
+    .node-n   { fill: #F7F7F8; stroke: rgba(23,23,23,0.12); stroke-width: 1.2; }
+    .node-b   { fill: #E5FFF2; stroke: #0FDC78; stroke-width: 1.2; }
+    .arr-n { stroke: #52525B; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .arr-b { stroke: #0FDC78; stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .arr-bd { stroke: #0FDC78; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; stroke-linecap: round; }
+    .cap { fill: #F7F7F8; stroke: rgba(23,23,23,0.12); stroke-width: 1; }
+    .capt { fill: #52525B; font: 500 12px/18px "SF Pro Text","PingFang SC",system-ui,sans-serif; }
+  </style>
+  <defs>
+    <marker id="arr-n-mk" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M1 1 L7 4 L1 7 Z" fill="#52525B"/>
+    </marker>
+    <marker id="arr-b-mk" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M1 1 L7 4 L1 7 Z" fill="#0FDC78"/>
+    </marker>
+  </defs>
+
+  <!-- 左：本地 -->
+  <rect class="boundary" x="40" y="48" width="240" height="316" rx="12"/>
+  <text class="th" x="56" y="74">本地 · 开发机</text>
+
+  <rect class="node-b" x="60" y="96" width="200" height="52" rx="8"/>
+  <text class="bt" x="76" y="120">门户项目</text>
+  <text class="bs" x="76" y="138">role=portal · base=/</text>
+
+  <rect class="node-n" x="60" y="206" width="200" height="52" rx="8"/>
+  <text class="th" x="76" y="230">LangChain 站点</text>
+  <text class="ts" x="76" y="248">本地任意目录</text>
+
+  <rect class="node-n" x="60" y="282" width="200" height="52" rx="8"/>
+  <text class="th" x="76" y="306">Redis 站点</text>
+  <text class="ts" x="76" y="324">本地任意目录</text>
+
+  <!-- 右：服务器 -->
+  <rect class="boundary" x="420" y="48" width="260" height="316" rx="12"/>
+  <text class="th" x="436" y="74">服务器 · docs.kfxh.work</text>
+
+  <rect class="node-b" x="440" y="96" width="220" height="52" rx="8"/>
+  <text class="bt" x="456" y="120">门户根</text>
+  <text class="bs" x="456" y="138">index.html · 顶部导航</text>
+
+  <rect class="nested" x="440" y="176" width="220" height="168" rx="10"/>
+  <text class="ts" x="456" y="196">直接子目录</text>
+
+  <rect class="node-n" x="456" y="208" width="188" height="48" rx="8"/>
+  <text class="th" x="472" y="230">langchain/</text>
+  <text class="ts" x="472" y="246">site.json</text>
+
+  <rect class="node-n" x="456" y="284" width="188" height="48" rx="8"/>
+  <text class="th" x="472" y="306">redis/</text>
+  <text class="ts" x="472" y="322">site.json</text>
+
+  <!-- 部署箭头：本地 → 服务器 -->
+  <path class="arr-bd" d="M260 122 L438 122" marker-end="url(#arr-b-mk)"/>
+  <rect class="cap" x="300" y="94" width="120" height="20" rx="10"/>
+  <text class="capt" x="310" y="108">build + 上传</text>
+
+  <path class="arr-n" d="M260 232 L454 232" marker-end="url(#arr-n-mk)"/>
+  <rect class="cap" x="290" y="204" width="128" height="20" rx="10"/>
+  <text class="capt" x="298" y="218">部署 + site.json</text>
+
+  <path class="arr-n" d="M260 308 L454 308" marker-end="url(#arr-n-mk)"/>
+  <rect class="cap" x="290" y="280" width="128" height="20" rx="10"/>
+  <text class="capt" x="298" y="294">部署 + site.json</text>
+
+  <!-- 扫描箭头：门户根 → 子模块区 -->
+  <path class="arr-b" d="M550 148 L550 174" marker-end="url(#arr-b-mk)"/>
+  <rect class="cap" x="560" y="152" width="132" height="20" rx="10"/>
+  <text class="capt" x="568" y="166">扫描 site.json 生成导航</text>
+
+  <!-- 图例 -->
+  <rect class="node-b" x="60" y="384" width="12" height="12" rx="3"/>
+  <text class="ts" x="78" y="394">门户（焦点）</text>
+  <rect class="node-n" x="170" y="384" width="12" height="12" rx="3"/>
+  <text class="ts" x="188" y="394">站点 / 子模块</text>
+  <line class="arr-n" x1="300" y1="390" x2="322" y2="390" marker-end="url(#arr-n-mk)"/>
+  <text class="ts" x="328" y="394">部署 / 上传</text>
+  <line class="arr-b" x1="440" y1="390" x2="462" y2="390" marker-end="url(#arr-b-mk)"/>
+  <text class="ts" x="468" y="394">扫描生成导航</text>
+</svg>

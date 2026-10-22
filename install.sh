@@ -177,6 +177,13 @@ check_env() {
     command -v "$tool" >/dev/null 2>&1 && ok "$tool 可用" || warn "缺少 ${tool}（部署功能不可用）"
   done
 
+  # 可选依赖：中文标题转拼音（缺失时中文标题会回退成英文名/默认名）
+  if [ -n "$py" ] && "$py" -c 'import pypinyin' 2>/dev/null; then
+    ok "pypinyin 可用（中文标题自动转拼音）"
+  elif [ -n "$py" ]; then
+    warn "缺少 pypinyin（中文标题将回退为英文名，可执行：${py} -m pip install pypinyin）"
+  fi
+
   return $fail
 }
 
@@ -315,7 +322,7 @@ install_one() {
   chmod +x "$target/assets/deploy.sh" "$target/assets/build.sh" "$target/install.sh" 2>/dev/null || true
   chmod +x "$target"/scripts/*.py 2>/dev/null || true
 
-  for f in SKILL.md scripts/init.py scripts/scan.py scripts/fix.py scripts/profile.py assets/deploy.sh assets/build.sh; do
+  for f in SKILL.md scripts/init.py scripts/scan.py scripts/fix.py scripts/profile.py scripts/sites.py scripts/update.py assets/deploy.sh assets/build.sh; do
     if [ ! -f "$target/$f" ]; then
       warn "安装不完整，缺少 ${f}：${target}"
       return 1
