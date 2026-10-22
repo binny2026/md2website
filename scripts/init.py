@@ -505,11 +505,16 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+// 点击卡片用 window.location 完整跳转，绕过 VitePress 对同源链接的 SPA 路由拦截（避免 404）
+function go(url) {
+  window.location.href = url
+}
 </script>
 
 <template>
   <div class="module-grid">
-    <a v-for="m in modules" :key="m.name" :href="m.link" class="module-card">
+    <a v-for="m in modules" :key="m.name" :href="m.link" class="module-card" @click.prevent="go(m.link)">
       <div class="module-card-title">{{ m.title }}</div>
       <div class="module-card-desc">{{ m.description }}</div>
     </a>
