@@ -1,6 +1,6 @@
 ---
 name: md2website
-description: "把一个 Markdown 文档项目（多章节教程、笔记、课件、手册）改造为静态文档站，并支持一键部署到远程服务器。自动识别章节目录、生成侧边栏导航/首页/全文搜索/代码高亮/图片放大，自动检测并修复会导致 Vue 编译器报错的语法冲突。当用户说「把 md 转成 html」「md 项目做成文档站」「课件/笔记/文档做成网站」「生成文档站」「部署文档站到服务器」时使用。"
+description: "把一个 Markdown 文档项目（多章节教程、笔记、课件、手册）改造为静态文档站，并支持一键部署到远程服务器。自动识别章节目录、生成侧边栏导航/首页/全文搜索/代码高亮/图片放大，自动检测并修复会导致 Vue 编译器报错的语法冲突。当用户说「把 md 转成 html」「md 项目做成文档站」「课件/笔记/文档做成网站」「生成文档站」「部署文档站到服务器」「更新站点」「更新文档站」「重建站点」「同步站点」「重新发布」「部署更新」时使用。更新站点时会自动查找已生成的站点，多个时让用户选择。"
 ---
 
 # Markdown → 文档站
@@ -49,6 +49,8 @@ python3 $SKILL_DIR/scripts/_env.py
 - `scripts/scan.py` — 扫描语法冲突与缺失图片
 - `scripts/fix.py` — 修复 `<img>` 标签与错误图片路径
 - `scripts/profile.py` — 部署配置档管理（set/bind/cache/list/show/check）
+- `scripts/sites.py` — 查找已生成的站点（list/select，支持 JSON 输出）
+- `scripts/update.py` — 更新已有站点（重建 + 构建，可选部署）
 - `assets/deploy.sh` — 一键部署脚本（init 时复制到项目里）
 
 
@@ -222,15 +224,52 @@ python3 "$SKILL_DIR"/scripts/profile.py bind --project "<输出目录>" --name <
 - 根目录散装的 md → 平铺成单页（`readme/index` 跳过）
 - URL slug 保留中文，只清洗空格和特殊字符
 
-## 增量更新已有站点
+## 更新已有站点（触发词：更新站点 / 重建站点 / 同步站点 / 重新发布）
+
+用户只说「更新站点」时，**不要让他翻目录找路径**，直接跑查找脚本：
+
+```bash
+python3 "$SKILL_DIR"/scripts/sites.py list          # 列出所有已生成的站点
+python3 "$SKILL_DIR"/scripts/sites.py list --json   # Agent 消费
+```
+
+站点靠站点目录里的 `.md2website.json`（源目录、标题、name、base）识别，
+全局登记表在 `~/.md2website/sites.json`，`init.py` 生成时会自动写入。
+
+**站点数量处理规则：**
+
+| 找到数量 | 处理方式 |
+| --- | --- |
+| 1 个 | 直接更新，把站点路径和标题告诉用户 |
+| 多个 | 用 AskUserQuestion 让用户选（编号 + 标题 + 源目录 + 最后更新时间） |
+| 0 个 | 告诉用户没有已生成站点，询问是否新建 |
+
+更新命令：
+
+```bash
+python3 "$SKILL_DIR"/scripts/update.py "<站点目录>"            # 重建 + 构建
+python3 "$SKILL_DIR"/scripts/update.py "<站点目录>" --deploy   # 重建 + 构建 + 部署
+python3 "$SKILL_DIR"/scripts/update.py "<站点目录>" --dry-run  # 只看计划
+```
+
+`update.py` 的行为：
+
+1. 读站点元数据里的源目录；源目录不可用时返回 `need_source`，此时让用户提供
+2. 把 `docs/.vitepress` 备份到站点内 `.backup/vitepress-<时间戳>`
+3. 用 `init.py --force` 原地重建（**新增章节自动进侧边栏**）
+4. 保留 `.deploy-local.yml` 与 `node_modules`，不会重配服务器
+5. 构建；加 `--deploy` 才执行 `./deploy.sh`
+
+无交互终端下，脚本会输出 `{"action": "choose"}` 或 `{"action": "need_source"}` JSON，
+按里面的信息向用户确认后再带参数重跑。**更新完成后必须核对页面数与图片数。**
+
+手工微调（只改个别文件时用，不必全量重建）：
 
 | 场景 | 操作 |
 | --- | --- |
 | 改已有章节内容 | 覆盖 `docs/<slug>/index.md`，重新 build |
 | 加图片 | 放进该章 `assets/`，正文用相对路径 |
-| 新增章节 | 在 `docs/.vitepress/config.mjs` 的 `chapters` 数组加一条，再 build |
-
-**新增章节必须改 config，否则侧边栏点不到**——这点要向用户讲清楚。
+| 新增章节 | 优先跑 `update.py`；手改则必须在 `config.mjs` 的 chapters 数组加一条 |
 
 ## 常见故障
 

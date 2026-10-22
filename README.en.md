@@ -172,6 +172,18 @@ ssh-copy-id -i ~/.ssh/id_ed25519.pub <user>@doc.example.com
 
 Options: `--profile <name>` (use another server), `--no-build`, `--dry-run`.
 
+## Updating an existing site
+
+Say "update the site" to your agent, or run:
+
+```bash
+python3 ~/.workbuddy/skills/md2website/scripts/sites.py list   # discover sites
+python3 ~/.workbuddy/skills/md2website/scripts/update.py       # pick interactively when several exist
+python3 ~/.workbuddy/skills/md2website/scripts/update.py "<site-dir>" --deploy
+```
+
+Each site records its source directory in `.md2website.json`; the global registry lives in `~/.md2website/sites.json`. Updates rebuild in place (new chapters are added to the sidebar automatically), back up `docs/.vitepress` to `.backup/`, and keep `.deploy-local.yml` plus `node_modules`. Building is the default; `--deploy` publishes.
+
 ## Scripts
 
 | Script | Purpose | Modifies files |
@@ -179,6 +191,8 @@ Options: `--profile <name>` (use another server), `--no-build`, `--dry-run`.
 | `scan.py` | Detect Vue syntax conflicts and missing images | No |
 | `fix.py` | Rewrite `<img>` tags, correct image paths | Yes (`--dry-run` to preview) |
 | `init.py` | Generate a complete documentation site project | Only the new output dir |
+| `sites.py` | Find generated sites (`list` / `select`) | No |
+| `update.py` | Rebuild an existing site from its recorded source, then build | Site dir, backup in `.backup/` |
 | `profile.py` | Manage per-site config and optional deployment profiles | `.deploy-local.yml` or `~/.workbuddy/deploy-profiles/` |
 | `_env.py` | Environment detection (Python / Node) | No |
 | `assets/build.sh` | One-click entry: scan → generate → install → build → preview | Output dir only |

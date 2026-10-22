@@ -203,15 +203,28 @@ python3 $SKILL/scripts/profile.py show     # 本项目的配置
 
 ---
 
-## 日常维护
+## 日常维护：更新站点
+
+源 Markdown 改完后，让 Agent「更新站点」即可，或自己执行：
+
+```bash
+SKILL=~/.workbuddy/skills/md2website
+
+python3 $SKILL/scripts/sites.py list                    # 有哪些站点
+python3 $SKILL/scripts/update.py                        # 自动定位，多个时让你选
+python3 $SKILL/scripts/update.py "<站点目录>" --deploy   # 更新并部署
+```
+
+更新会在原目录重建（新增章节自动进侧边栏），覆盖前把配置备份到 `.backup/`，
+并保留 `.deploy-local.yml` 与 `node_modules`。
+
+只改个别文件时，也可以手工处理：
 
 | 场景 | 操作 |
 | --- | --- |
 | 改已有章节内容 | 覆盖 `docs/<章节>/index.md`，`npm run build` |
 | 加图片 | 放进该章 `assets/`，正文写 `![](assets/xx.png)` |
-| 新增章节 | 在 `docs/.vitepress/config.mjs` 的 `chapters` 数组加一行，再 build |
-
-**新增章节必须改 config，否则侧边栏点不到。**
+| 新增章节 | 优先跑 `update.py`；手改则必须在 `config.mjs` 的 chapters 数组加一行 |
 
 ---
 

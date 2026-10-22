@@ -33,7 +33,8 @@ git clone git@github.com:binny2026/md2website.git ~/md2website && cd ~/md2websit
 | 语法冲突自动修复 | `<https://...>`、`{{ }}`、`<email_hash:...>`、`<img>` 标签等会被 Vue 误判的写法自动转义 |
 | 死链自动改写 | 正文里指向源 `.md` 的相对链接自动改写为站点 URL |
 | 一键部署 | 打包 → 上传 → 远程解压 → 校验，支持 SSH 密钥或账号密码 |
-| 配置隔离 | 服务器信息存在用户目录，项目内不含敏感信息 |
+| 站点自动登记与更新 | 说「更新站点」即可自动查找并原地重建，多个站点时让你选 |
+| 配置隔离 | 服务器信息只存站点目录的 `.deploy-local.yml`（权限 600，不进 git） |
 
 ---
 
@@ -282,6 +283,21 @@ python3 $SKILL/scripts/fix.py ~/你的md目录-site/docs --dry-run   # 只看不
 npm run build
 ```
 
+### 方式四：更新已有站点
+
+源 Markdown 改完后，不需要重新指定路径。直接对 Agent 说「更新站点」「重建站点」「同步站点」，它会自动查找：
+
+```bash
+python3 $SKILL/scripts/sites.py list          # 看看有哪些站点
+python3 $SKILL/scripts/update.py              # 自动定位；多个站点时让你选
+python3 $SKILL/scripts/update.py "<站点目录>" --deploy   # 更新并部署
+```
+
+- 站点信息记录在站点目录的 `.md2website.json`，全局登记表在 `~/.md2website/sites.json`
+- 更新是原地重建：新增章节自动进侧边栏，覆盖前会把配置备份到 `.backup/`
+- `.deploy-local.yml` 与 `node_modules` 会被保留，不用重新配服务器
+- 默认只构建不部署，加 `--deploy` 才发布
+
 ---
 
 ## 部署到服务器
@@ -450,7 +466,9 @@ site_base: /
 | `scripts/_env.py` | 探测 Python / Node，给出安装指引 | 只读 |
 | `scripts/scan.py` | 检测 Vue 语法冲突、缺失图片 | 只读 |
 | `scripts/fix.py` | 修复 `<img>` 标签、错误图片扩展名 | 改写（默认，可 `--dry-run`） |
-| `scripts/init.py` | 生成完整文档站项目（含死链改写、多级目录、主题） | 只写新目录 |
+| `scripts/init.py` | 生成完整文档站项目（含死链改写、多级目录、主题） | 只写新目录，`--force` 时原地重建 |
+| `scripts/sites.py` | 查找已生成的站点（`list/select`） | 只读 |
+| `scripts/update.py` | 更新已有站点：重建 + 构建，可选部署 | 写站点目录，备份到 `.backup/` |
 | `scripts/profile.py` | 部署配置档管理（`path/show/check/set/list/bind/cache/wizard`） | 写 `~/.workbuddy/deploy-profiles/` 或站点 `.deploy-local.yml` |
 | `assets/build.sh` | 一键入口：扫描 → 生成 → 装依赖 → 构建 → 预览 | 写输出目录 |
 | `assets/deploy.sh` | 构建 + 打包上传 + 远程解压 + 校验 | 写本地临时包 |
