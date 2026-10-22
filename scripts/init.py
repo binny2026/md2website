@@ -305,6 +305,8 @@ def make_favicon_svg(title):
 
 CONFIG_TMPL = '''import { defineConfig } from 'vitepress'
 
+const base = `${(process.env.VP_BASE || '@@BASE@@').replace(/\\/+$/, '')}/`
+
 // 章节导航：新增章节时在此追加一条即可
 const chapters = [
 @@CHAPTER_ITEMS@@
@@ -315,10 +317,10 @@ export default defineConfig({
   title: '@@TITLE@@',
   description: '@@DESC@@',
   head: [
-    ['link', { rel: 'icon', href: '/favicon.svg' }]
+    ['link', { rel: 'icon', href: `${base}favicon.svg` }]
   ],
   // base 优先取环境变量 VP_BASE（子模块挂门户时由 deploy.sh 注入），否则用生成时的值
-  base: process.env.VP_BASE || '@@BASE@@',
+  base,
   cleanUrls: true,
 
   markdown: {
@@ -358,12 +360,12 @@ export default defineConfig({
   },
 
   themeConfig: {
-    outline: { level: [2, 3], label: '本页目录' },
+    outline: { level: [2, 3], label: '本页章节' },
     nav: [
       { text: '首页', link: '/' },
       { text: '文档', link: '/@@FIRST@@/' },
       // 子模块挂门户时，deploy.sh 会注入 PORTAL_URL 环境变量，添加「返回门户」入口
-      ...(process.env.PORTAL_URL ? [{ text: '返回门户', link: process.env.PORTAL_URL }] : [])
+      ...(process.env.PORTAL_URL ? [{ text: '返回门户', link: process.env.PORTAL_URL, target: '_self' }] : [])
     ],
     sidebar: [
       {
@@ -387,7 +389,7 @@ export default defineConfig({
       }
     },
     docFooter: { prev: '上一篇', next: '下一篇' },
-    outlineTitle: '本页目录',
+    outlineTitle: '本页章节',
     returnToTopLabel: '回到顶部',
     sidebarMenuLabel: '目录',
     darkModeSwitchLabel: '主题',
@@ -440,11 +442,13 @@ export default {
 }
 '''
 
-# 门户主题：额外注册 ModuleGrid 组件（首页动态加载子模块清单）
-PORTAL_THEME_INDEX = '''import DefaultTheme from 'vitepress/theme'
-import { onMounted, watch, nextTick } from 'vue'
+# 门户主题：注册 ModuleGrid（首页卡片）+ PortalNav（顶部动态下拉导航）
+PORTAL_THEME_INDEX = '''import { h, onMounted, watch, nextTick } from 'vue'
+import DefaultTheme from 'vitepress/theme'
 import { useRoute } from 'vitepress'
 import ModuleGrid from './ModuleGrid.vue'
+import PortalNav from './PortalNav.vue'
+import { createModuleCatalog, moduleCatalogKey } from './moduleCatalog.mjs'
 import './custom.css'
 
 function installZoom() {
@@ -475,7 +479,12 @@ function installZoom() {
 
 export default {
   extends: DefaultTheme,
+  Layout: () => h(DefaultTheme.Layout, null, {
+    'nav-bar-content-after': () => h(PortalNav),
+    'nav-screen-content-after': () => h(PortalNav, { mobile: true })
+  }),
   enhanceApp({ app }) {
+    app.provide(moduleCatalogKey, createModuleCatalog())
     app.component('ModuleGrid', ModuleGrid)
   },
   setup() {
@@ -483,73 +492,86 @@ export default {
     const run = () => nextTick(() => setTimeout(installZoom, 60))
     onMounted(run)
     watch(() => route.path, run)
+
   }
 }
 '''
 
 # 门户首页动态子模块卡片组件（fetch modules.json.php）
 PORTAL_MODULE_GRID = '''<script setup>
-import { ref, onMounted } from 'vue'
-import { withBase } from 'vitepress'
+import { useModuleCatalog } from './moduleCatalog.mjs'
 
-const modules = ref([])
-const loading = ref(true)
-
-onMounted(async () => {
-  try {
-    const res = await fetch(withBase('/modules.json.php'))
-    if (res.ok) modules.value = await res.json()
-  } catch (e) {
-    modules.value = []
-  } finally {
-    loading.value = false
-  }
-})
-
-// 点击卡片用 window.location 完整跳转，绕过 VitePress 对同源链接的 SPA 路由拦截（避免 404）
-function go(url) {
-  window.location.href = url
-}
+const { modules, loading, error, load } = useModuleCatalog()
 </script>
 
 <template>
   <div class="module-grid">
-    <a v-for="m in modules" :key="m.name" :href="m.link" class="module-card" @click.prevent="go(m.link)">
+    <a v-for="(m, i) in modules" :key="m.name" :href="m.link" target="_self" class="module-card">
+      <span class="module-card-index" aria-hidden="true">{{ String(i + 1).padStart(2, '0') }}</span>
       <div class="module-card-title">{{ m.title }}</div>
       <div class="module-card-desc">{{ m.description }}</div>
     </a>
-    <p v-if="!loading && modules.length === 0" class="module-empty">暂无子模块，部署后自动出现</p>
+    <p v-if="loading" role="status">正在加载模块…</p>
+    <p v-else-if="error" role="alert">模块暂时无法加载。<button type="button" @click="load">重试</button></p>
+    <p v-else-if="modules.length === 0" class="module-empty">暂无模块</p>
   </div>
 </template>
 
 <style scoped>
+/* 讲义卡片：左侧色条 + 右上编号 */
 .module-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
-  margin: 24px 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  gap: 18px;
+  margin: 8px 0 32px;
+}
+.module-grid::before {
+  content: '';
+  grid-column: 1 / -1;
+  height: 3px;
+  margin-bottom: 6px;
+  background: linear-gradient(90deg, var(--campus-blue) 0 52px, var(--campus-line) 52px 100%);
 }
 .module-card {
+  position: relative;
   display: block;
-  padding: 16px 20px;
+  padding: 20px 20px 18px 22px;
+  background: var(--campus-card-bg);
   border: 1px solid var(--vp-c-border);
-  border-radius: 12px;
+  border-left: 3px solid var(--campus-blue);
+  border-radius: 3px;
   text-decoration: none;
   color: inherit;
+  box-shadow: 0 1px 2px rgba(31, 42, 68, 0.04);
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 .module-card:hover {
-  border-color: var(--vp-c-brand-1);
-  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.16);
   transform: translateY(-2px);
+  border-color: var(--campus-blue);
+  border-left-color: var(--campus-red);
+  box-shadow: 0 10px 24px rgba(31, 42, 68, 0.12);
+}
+.module-card-index {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  font-family: var(--campus-serif);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--campus-blue);
+  opacity: 0.55;
 }
 .module-card-title {
-  font-size: 16px;
+  font-family: var(--campus-serif);
+  font-size: 18px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   margin-bottom: 8px;
+  padding-right: 28px;
 }
 .module-card-desc {
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.7;
   color: var(--vp-c-text-2);
   word-break: break-all;
 }
@@ -557,6 +579,198 @@ function go(url) {
   color: var(--vp-c-text-2);
 }
 </style>
+'''
+
+# 门户顶部动态下拉导航：fetch modules.json.php 渲染模块菜单，整页跳转避免 SPA 拦截
+PORTAL_NAV = '''<script setup>
+import { computed, ref } from 'vue'
+import { useData, withBase } from 'vitepress'
+import { useModuleCatalog } from './moduleCatalog.mjs'
+
+defineProps({ mobile: Boolean })
+const { theme } = useData()
+const { modules, loading, error, load } = useModuleCatalog()
+const menu = ref(null)
+const frequent = computed(() => {
+  const names = theme.value.portal?.frequentModules ?? ['langchain', 'redis']
+  return names.map((name) => modules.value.find((item) => item.name === name)).filter(Boolean)
+})
+
+function closeMenu() {
+  if (menu.value) menu.value.open = false
+}
+
+function closeOutside(event) {
+  if (!event.currentTarget.contains(event.relatedTarget)) closeMenu()
+}
+</script>
+
+<template>
+  <nav class="portal-nav" :class="{ 'portal-nav-mobile': mobile }" aria-label="模块导航">
+    <a v-for="m in frequent" :key="m.name" :href="m.link" target="_self" class="portal-nav-trigger">{{ m.title }}</a>
+    <details ref="menu" class="portal-nav-item" @keydown.esc="closeMenu" @focusout="closeOutside">
+      <summary class="portal-nav-trigger">全部模块 <span class="portal-nav-caret" aria-hidden="true">▾</span></summary>
+      <div class="portal-nav-dropdown">
+      <p v-if="loading" role="status">正在加载…</p>
+      <p v-else-if="error" role="alert">加载失败 <button type="button" @click="load">重试</button></p>
+      <p v-else-if="modules.length === 0">暂无模块</p>
+      <a v-for="m in modules" :key="m.name"
+         :href="m.link"
+         target="_self"
+         class="portal-nav-link"
+         @click="closeMenu">
+        <span class="portal-nav-link-title">{{ m.title }}</span>
+        <span class="portal-nav-link-desc" v-if="m.description">{{ m.description }}</span>
+      </a>
+      </div>
+    </details>
+    <a :href="withBase('/')" target="_self" class="portal-nav-trigger portal-nav-home">首页</a>
+  </nav>
+</template>
+
+<style scoped>
+.portal-nav { display: flex; align-items: center; pointer-events: auto; }
+.portal-nav-mobile { display: none; }
+.portal-nav-trigger { cursor: pointer; list-style: none; }
+.portal-nav-trigger::-webkit-details-marker { display: none; }
+.portal-nav a:focus-visible, .portal-nav summary:focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: 2px; }
+.portal-nav-item {
+  position: relative;
+  display: inline-block;
+  list-style: none;
+}
+.portal-nav-trigger {
+  padding: 8px 12px;
+  text-decoration: none;
+  color: var(--vp-c-text-1);
+  font-size: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+.portal-nav-trigger:hover { color: var(--vp-c-brand-1); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px; }
+.portal-nav-home { position: relative; }
+@media (min-width: 768px) {
+  .portal-nav-home { margin-left: 6px; padding-left: 18px; }
+  .portal-nav-home::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    width: 1px;
+    height: 14px;
+    margin-top: -7px;
+    background: var(--vp-c-divider);
+  }
+}
+.portal-nav-caret { font-size: 10px; opacity: 0.55; }
+.portal-nav-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: min(320px, calc(100vw - 48px));
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--campus-card-bg, var(--vp-c-bg));
+  border: 1px solid var(--vp-c-border);
+  border-top: 2px solid var(--vp-c-brand-1);
+  border-radius: 4px;
+  box-shadow: 0 12px 28px rgba(31, 42, 68, 0.14);
+  padding: 6px 0;
+  z-index: 3000;
+  animation: portal-nav-fade 0.12s ease-out;
+}
+@keyframes portal-nav-fade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.portal-nav-link {
+  display: block;
+  padding: 8px 16px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.12s, color 0.12s;
+}
+.portal-nav-link:hover {
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-brand-1);
+}
+.portal-nav-link-title {
+  display: block;
+  font-weight: 500;
+  font-size: 14px;
+}
+.portal-nav-link-desc {
+  display: block;
+  font-size: 12px;
+  color: var(--vp-c-text-2);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 767px) {
+  .portal-nav { display: none; }
+  .portal-nav-mobile { display: flex; align-items: stretch; flex-direction: column; padding: 12px 0; }
+  .portal-nav-item { display: block; }
+  .portal-nav-trigger { min-height: 44px; white-space: normal; overflow-wrap: anywhere; }
+  .portal-nav-dropdown { position: static; width: 100%; max-height: 45vh; box-shadow: none; }
+}
+</style>
+'''
+
+PORTAL_MODULE_CATALOG = '''import { inject, onMounted, ref } from 'vue'
+import { withBase } from 'vitepress'
+
+export const moduleCatalogKey = Symbol('portal-module-catalog')
+
+export function createModuleCatalog() {
+  const modules = ref([])
+  const loading = ref(true)
+  const error = ref(false)
+  let pending
+  let loaded = false
+
+  async function load() {
+    if (pending) return pending
+    if (loaded) return
+    loading.value = true
+    error.value = false
+    pending = (async () => {
+      try {
+        const response = await fetch(withBase('/modules.json.php'))
+        if (!response.ok) throw new Error('模块清单请求失败')
+        const data = await response.json()
+        if (!Array.isArray(data)) throw new Error('模块清单格式错误')
+        const names = new Set()
+        modules.value = data.filter((item) => {
+          if (!item || typeof item.name !== 'string' || typeof item.title !== 'string' || typeof item.link !== 'string') return false
+          if (names.has(item.name) || !/^(?:https?:\\/\\/|\\/(?!\\/))/i.test(item.link)) return false
+          names.add(item.name)
+          return true
+        })
+        loaded = true
+      } catch {
+        error.value = true
+      } finally {
+        loading.value = false
+        pending = undefined
+      }
+    })()
+    return pending
+  }
+
+  return { modules, loading, error, load }
+}
+
+export function useModuleCatalog() {
+  const catalog = inject(moduleCatalogKey)
+  onMounted(catalog.load)
+  return catalog
+}
 '''
 
 # 门户子模块清单动态接口（PHP 实时扫描直接子目录的 site.json）
@@ -569,6 +783,7 @@ $base = rtrim(__DIR__, '/');
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
 $origin = $host ? ($scheme . '://' . $host) : '';
+$prefix = rtrim(str_replace('\\\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/modules.json.php')), '/.');
 $modules = [];
 foreach (glob($base . '/*', GLOB_ONLYDIR) as $dir) {
     $name = basename($dir);
@@ -580,7 +795,7 @@ foreach (glob($base . '/*', GLOB_ONLYDIR) as $dir) {
         'name' => $name,
         'title' => (isset($meta['title']) && $meta['title'] !== '') ? $meta['title'] : $name,
         'description' => isset($meta['description']) ? $meta['description'] : '',
-        'link' => $origin ? ($origin . '/' . $name . '/') : ('/' . $name . '/'),
+        'link' => $origin . $prefix . '/' . rawurlencode($name) . '/',
     ];
 }
 usort($modules, function ($a, $b) { return strcmp($a['name'], $b['name']); });
@@ -765,6 +980,158 @@ body {
 .img-zoom-mask.open img { transform: scale(1); }
 '''
 
+PORTAL_CSS = '''
+/* ============ 校园风格：学院蓝 + 讲义纸 ============ */
+:root {
+  --campus-blue: #1f3a68;
+  --campus-blue-soft: rgba(31, 58, 104, 0.08);
+  --campus-red: #a63a2f;
+  --campus-paper: #fbf8f1;
+  --campus-card-bg: #fffdf8;
+  --campus-line: rgba(31, 58, 104, 0.16);
+  --campus-serif: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', Georgia, serif;
+  --vp-c-brand-1: #1f3a68;
+  --vp-c-brand-2: #2c4f86;
+  --vp-c-brand-3: #16294a;
+  --vp-c-brand-soft: rgba(31, 58, 104, 0.12);
+  --vp-c-bg: #fbf8f1;
+  --vp-c-bg-alt: #f4efe4;
+  --vp-c-bg-soft: #f4efe4;
+  --vp-c-bg-elv: #fffdf8;
+  --vp-c-divider: rgba(31, 58, 104, 0.14);
+  --vp-c-border: rgba(31, 58, 104, 0.18);
+  --vp-c-gutter: rgba(31, 58, 104, 0.12);
+  --vp-font-family-base: 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  --vp-nav-bg-color: rgba(251, 248, 241, 0.92);
+  --vp-sidebar-bg-color: #f7f2e7;
+  --vp-code-block-bg: #f4efe4;
+}
+.dark {
+  --campus-blue: #9db8e0;
+  --campus-blue-soft: rgba(157, 184, 224, 0.12);
+  --campus-red: #d98a7c;
+  --campus-paper: #14181f;
+  --campus-card-bg: #1a1f28;
+  --campus-line: rgba(157, 184, 224, 0.2);
+  --vp-c-brand-1: #9db8e0;
+  --vp-c-brand-2: #b6cbe8;
+  --vp-c-brand-3: #7d9bc9;
+  --vp-c-brand-soft: rgba(157, 184, 224, 0.14);
+  --vp-c-bg: #14181f;
+  --vp-c-bg-alt: #10141a;
+  --vp-c-bg-soft: #1a1f28;
+  --vp-c-bg-elv: #1a1f28;
+  --vp-c-divider: rgba(157, 184, 224, 0.16);
+  --vp-c-border: rgba(157, 184, 224, 0.2);
+  --vp-c-gutter: rgba(157, 184, 224, 0.14);
+  --vp-nav-bg-color: rgba(20, 24, 31, 0.92);
+  --vp-sidebar-bg-color: #10141a;
+  --vp-code-block-bg: #10141a;
+}
+
+/* 讲义纸：横线稿纸 + 左侧装订线 */
+body {
+  background-color: var(--campus-paper);
+  background-image:
+    linear-gradient(90deg, transparent 0 63px, var(--campus-line) 63px 64px, transparent 64px),
+    linear-gradient(var(--campus-line) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 32px;
+  background-attachment: fixed;
+}
+@media (max-width: 767px) {
+  body { background-image: linear-gradient(var(--campus-line) 1px, transparent 1px); }
+}
+
+/* 顶部导航：纸面 + 细线 */
+.VPNavBar { box-shadow: none; border-bottom: 1px solid var(--vp-c-divider); }
+.VPNavBar .VPNavBarTitle .title { font-family: var(--campus-serif); letter-spacing: 0.04em; }
+.VPNavBar .VPNavBarMenuLink { font-size: 14px; }
+
+/* 首页 Hero：衬线标题 + 校刊式副标题 */
+.VPHome { position: relative; }
+.VPHome .VPHero { padding-top: 88px; padding-bottom: 28px; }
+.VPHome .VPHero .name,
+.VPHome .VPHero .text {
+  font-family: var(--campus-serif);
+  font-size: 46px;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--campus-blue);
+}
+.VPHome .VPHero .tagline {
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  color: var(--vp-c-text-2);
+  max-width: 640px;
+}
+.VPHome .VPHero .tagline::after {
+  content: '';
+  display: block;
+  width: 56px;
+  height: 3px;
+  margin-top: 18px;
+  background: var(--campus-red);
+}
+.VPHome .vp-doc { background: transparent; }
+.VPHome .vp-doc h2 {
+  font-family: var(--campus-serif);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--campus-blue);
+}
+
+/* 正文：衬线标题、讲义式引用与表格 */
+.vp-doc h1, .vp-doc h2, .vp-doc h3 {
+  font-family: var(--campus-serif);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--campus-blue);
+  letter-spacing: 0.02em;
+}
+.vp-doc h2 { border-top: 1px solid var(--vp-c-divider); padding-top: 20px; }
+.vp-doc blockquote {
+  border-left: 3px solid var(--campus-red);
+  background: var(--campus-blue-soft);
+  border-radius: 0;
+}
+.vp-doc th { background: var(--campus-blue-soft); }
+.vp-doc div[class*='language-'] {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 4px;
+  box-shadow: none;
+}
+.VPFeature {
+  border: 1px solid var(--vp-c-border);
+  border-left: 3px solid var(--campus-blue);
+  border-radius: 3px;
+  background: var(--campus-card-bg);
+}
+.VPFeature:hover { box-shadow: 0 10px 24px rgba(31, 42, 68, 0.12); transform: translateY(-2px); }
+.VPButton.brand {
+  background-image: none;
+  background-color: var(--campus-blue);
+  border-radius: 3px;
+  box-shadow: none;
+}
+.VPButton.brand:hover { background-color: var(--vp-c-brand-2); box-shadow: none; }
+::-webkit-scrollbar-thumb { background: var(--campus-blue); border-radius: 4px; }
+
+/* 顶部顺序：模块 → 全部模块 → 首页 → 主题切换（主题按钮排到导航之后） */
+@media (min-width: 768px) {
+  .VPNavBar .content-body > .appearance { order: 1; }
+  .VPNavBar .content-body > .portal-nav { order: 0; }
+  .VPNavBar .content-body > .appearance::before { display: none; }
+}
+
+@media (max-width: 767px) {
+  .VPHome .VPHero { padding-top: 48px; }
+  .VPHome .VPHero .name,
+  .VPHome .VPHero .text { font-size: 30px; }
+}
+'''
+
 HOME_TMPL = '''---
 layout: home
 
@@ -795,18 +1162,16 @@ features:
 # 门户站点：首页通过 ModuleGrid 组件动态加载子模块（fetch modules.json.php）
 PORTAL_CONFIG_TMPL = '''import { defineConfig } from 'vitepress'
 
-const nav = [
-  { text: '首页', link: '/' },
-]
+const base = `${(process.env.VP_BASE || '@@BASE@@').replace(/\\/+$/, '')}/`
 
 export default defineConfig({
   lang: 'zh-CN',
   title: '@@TITLE@@',
   description: '@@DESC@@',
   head: [
-    ['link', { rel: 'icon', href: '/favicon.svg' }]
+    ['link', { rel: 'icon', href: `${base}favicon.svg` }]
   ],
-  base: process.env.VP_BASE || '@@BASE@@',
+  base,
   cleanUrls: true,
 
   markdown: {
@@ -843,8 +1208,9 @@ export default defineConfig({
   },
 
   themeConfig: {
-    outline: { level: [2, 3], label: '本页目录' },
-    nav,
+    outline: { level: [2, 3], label: '本页章节' },
+    nav: [],
+    portal: { frequentModules: ['langchain', 'redis'] },
     sidebar: [],
     search: {
       provider: 'local',
@@ -860,7 +1226,7 @@ export default defineConfig({
       }
     },
     docFooter: { prev: '上一篇', next: '下一篇' },
-    outlineTitle: '本页目录',
+    outlineTitle: '本页章节',
     returnToTopLabel: '回到顶部',
     sidebarMenuLabel: '目录',
     darkModeSwitchLabel: '主题',
@@ -869,12 +1235,11 @@ export default defineConfig({
 })
 '''
 
-# 门户首页：features 由 portal_sync.py 扫描子目录后重写
+# 门户首页：模块卡片由 ModuleGrid 组件动态加载（fetch modules.json.php）
 PORTAL_HOME_TMPL = '''---
 layout: home
 
 hero:
-  name: @@TITLE@@
   text: @@SUBTITLE@@
   tagline: @@TAGLINE@@
 ---
@@ -1062,12 +1427,14 @@ def gen_portal(args):
     }))
     write(os.path.join(vp, 'theme', 'index.mjs'), PORTAL_THEME_INDEX)
     write(os.path.join(vp, 'theme', 'ModuleGrid.vue'), PORTAL_MODULE_GRID)
-    write(os.path.join(vp, 'theme', 'custom.css'), CUSTOM_CSS)
+    write(os.path.join(vp, 'theme', 'PortalNav.vue'), PORTAL_NAV)
+    write(os.path.join(vp, 'theme', 'moduleCatalog.mjs'), PORTAL_MODULE_CATALOG)
+    write(os.path.join(vp, 'theme', 'custom.css'), CUSTOM_CSS + PORTAL_CSS)
 
     write(os.path.join(docs, 'index.md'), render(PORTAL_HOME_TMPL, {
         'TITLE': title,
-        'SUBTITLE': args.subtitle or '文档门户',
-        'TAGLINE': '聚合所有子模块的统一入口',
+        'SUBTITLE': args.subtitle or '',
+        'TAGLINE': '按模块整理，随时查阅。',
     }))
     write(os.path.join(out, 'package.json'), render(PACKAGE_JSON, {'NAME': site_name}))
     write(os.path.join(out, '.gitignore'), GITIGNORE)
