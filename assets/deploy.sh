@@ -299,11 +299,11 @@ if [ "$DO_BUILD" != "false" ]; then
     export PORTAL_URL="$PORTAL_URL"
   elif [ -n "${PORTAL_PROJECT:-}" ] && [ -f "$PORTAL_PROJECT/.deploy-local.yml" ]; then
     # 优先读取门户显式配置的 portal_url（含协议/域名/端口），否则从 remote_dir 目录名推断域名
-    PORTAL_URL_CFG="$(grep -E '^[[:space:]]*portal_url:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*portal_url:[[:space:]]*//' | tr -d '[:space:]')"
+    PORTAL_URL_CFG="$(grep -E '^[[:space:]]*portal_url:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*portal_url:[[:space:]]*//' | tr -d '[:space:]' || true)"
     if [ -n "$PORTAL_URL_CFG" ]; then
       export PORTAL_URL="$PORTAL_URL_CFG"
     else
-      PORTAL_REMOTE="$(grep -E '^[[:space:]]*remote_dir:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*remote_dir:[[:space:]]*//' | tr -d '[:space:]')"
+      PORTAL_REMOTE="$(grep -E '^[[:space:]]*remote_dir:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*remote_dir:[[:space:]]*//' | tr -d '[:space:]' || true)"
       PORTAL_DOMAIN="$(printf '%s' "$PORTAL_REMOTE" | sed -E 's#^/www/wwwroot/([^/]+).*#\1#')"
       if [ -n "$PORTAL_DOMAIN" ] && [ "$PORTAL_DOMAIN" != "$PORTAL_REMOTE" ]; then
         export PORTAL_URL="https://$PORTAL_DOMAIN/"
@@ -514,7 +514,7 @@ elif [ -n "${PORTAL_PROJECT:-}" ]; then
   # 此处再兜底读门户配置，兼容 --no-build 跳过构建块的场景）
   _base_url="${PORTAL_URL:-}"
   if [ -z "$_base_url" ] && [ -f "$PORTAL_PROJECT/.deploy-local.yml" ]; then
-    _base_url="$(grep -E '^[[:space:]]*portal_url:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*portal_url:[[:space:]]*//' | tr -d '[:space:]')"
+    _base_url="$(grep -E '^[[:space:]]*portal_url:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*portal_url:[[:space:]]*//' | tr -d '[:space:]' || true)"
   fi
   if [ -n "$_base_url" ]; then
     SITE_URL="${_base_url%/}/${SITE_BASE#/}"
