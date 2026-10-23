@@ -1,5 +1,11 @@
 ---
 name: md2website
+display_name: Markdown 文档站生成器
+display_name_en: Markdown Documentation Website Builder
+description_zh: "将 Markdown 教程、笔记、课件和手册转换为支持导航、全文搜索、代码高亮和图片放大的文档站，支持站点更新、门户聚合及远程部署。"
+description_en: "Convert Markdown tutorials, notes, and manuals into documentation websites with navigation, full-text search, syntax highlighting, and image zoom. Supports site updates, portal aggregation, and remote deployment."
+version: 1.0.0
+author: binny
 description: "把一个 Markdown 文档项目（多章节教程、笔记、课件、手册）改造为静态文档站，并支持一键部署到远程服务器。自动识别章节目录、生成侧边栏导航/首页/全文搜索/代码高亮/图片放大，自动检测并修复会导致 Vue 编译器报错的语法冲突。当用户说「把 md 转成 html」「md 项目做成文档站」「课件/笔记/文档做成网站」「生成文档站」「部署文档站到服务器」「更新站点」「更新文档站」「重建站点」「同步站点」「重新发布」「部署更新」时使用。更新站点时会自动查找已生成的站点，多个时让用户选择。当用户说「门户」「子模块」「多站点聚合」「挂到门户」「返回门户」时，使用门户功能把多个站点聚合成一个入口。"
 ---
 
