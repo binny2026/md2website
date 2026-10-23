@@ -327,6 +327,8 @@ export default defineConfig({
   // base 优先取环境变量 VP_BASE（子模块挂门户时由 deploy.sh 注入），否则用生成时的值
   base,
   cleanUrls: true,
+  // 源文档可能引用源码文件/已删除文档等站外内容，避免因死链导致整体构建失败
+  ignoreDeadLinks: true,
 
   markdown: {
     lineNumbers: true,
