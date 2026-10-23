@@ -541,6 +541,11 @@ printf '  时间    %s\n' "$STAMP"
 printf '  地址    %s\n' "$SITE_URL"
 printf '  目录    %s\n\n' "$REMOTE_DIR"
 
+# 提示 cleanUrls 需要 nginx try_files，否则子页面刷新会 404
+printf '%s提示：%s站点启用 cleanUrls（无扩展名 URL），子页面刷新若报 404，多为 nginx 未配 try_files。\n' "$C_WARN" "$C_RESET"
+printf '  在站点 nginx 配置的 server 块内加入并重载即可：\n'
+printf '    location / { try_files $uri $uri/ $uri.html /index.html; }\n\n'
+
 # 子模块：配置了 PORTAL_PROJECT 时，自动重建并上传门户
 if [ "$PORTAL_ROLE" != "portal" ] && [ -n "${PORTAL_PROJECT:-}" ]; then
   if [ -d "$PORTAL_PROJECT" ] && [ -x "$PORTAL_PROJECT/deploy.sh" ]; then
