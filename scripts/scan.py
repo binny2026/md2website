@@ -56,6 +56,9 @@ IMG_REF = re.compile(r'!\[[^\]]*\]\(\s*<?([^)\s>]+)>?[^)]*\)')
 HTML_IMG_SRC = re.compile(r'<img\b[^>]*\bsrc\s*=\s*["\']([^"\']+)["\']', re.I)
 FENCE = re.compile(r'^\s*(```|~~~)')
 
+# 普通 Markdown 链接（排除图片链接 ![...]，外链/锚点在检测时再过滤）
+MD_LINK = re.compile(r'(?<!!)\[[^\]]*\]\(\s*<?([^)>]+)>?\s*\)')
+
 
 def iter_md(root):
     for dirpath, dirnames, filenames in os.walk(root):
@@ -72,7 +75,8 @@ def rel(root, path):
 
 def scan(root):
     findings = []
-    stats = {'files': 0, 'lines': 0, 'images_referenced': 0, 'images_missing': 0}
+    stats = {'files': 0, 'lines': 0, 'images_referenced': 0, 'images_missing': 0,
+             'md_links_checked': 0, 'dead_md_links': 0}
 
     for path in iter_md(root):
         stats['files'] += 1
@@ -132,6 +136,28 @@ def scan(root):
                         'fix': '确认文件名大小写与扩展名（.png/.jpeg/.jpg 易混），从源目录补齐',
                     })
 
+            # 死链检查：正文里指向本地 .md 文件的链接，目标文件不存在（重命名/删除后遗留）
+            for m in MD_LINK.finditer(line):
+                ref = m.group(1).strip()
+                if re.match(r'^(https?:)?//|^data:|^mailto:|^#', ref):
+                    continue
+                ref_clean = ref.split('#')[0].split('?')[0]
+                if not ref_clean.lower().endswith(('.md', '.markdown')):
+                    continue
+                stats['md_links_checked'] += 1
+                target = os.path.normpath(os.path.join(base, ref_clean))
+                if not os.path.exists(target):
+                    stats['dead_md_links'] += 1
+                    findings.append({
+                        'file': rel(root, path),
+                        'line': no,
+                        'id': 'dead_md_link',
+                        'level': 'warn',
+                        'desc': f'指向不存在的源文件: {ref}',
+                        'snippet': line.strip()[:160],
+                        'fix': '文件名可能已重命名或删除，更新链接指向实际文件名',
+                    })
+
     return findings, stats
 
 
@@ -160,7 +186,8 @@ def main():
 
         print(f"扫描目录: {root}")
         print(f"文件 {stats['files']} 个 / {stats['lines']} 行；"
-              f"图片引用 {stats['images_referenced']} 处，缺失 {stats['images_missing']} 处\n")
+              f"图片引用 {stats['images_referenced']} 处，缺失 {stats['images_missing']} 处；"
+              f"md 链接 {stats['md_links_checked']} 处，死链 {stats['dead_md_links']} 处\n")
 
         if not findings:
             print('未发现阻断性问题，可直接初始化文档站。')
