@@ -19,10 +19,12 @@ import json
 import os
 import re
 import sys
+from urllib.parse import urlsplit
 
 PROFILE_DIR = os.path.expanduser('~/.workbuddy/deploy-profiles')
 PROFILE_MARK = '.deploy-profile'
 LOCAL_YML = '.deploy-local.yml'
+HOSTS_FILE = os.path.join(os.path.expanduser('~'), '.md2website', 'hosts.json')
 
 # 字段定义：(键, 说明, 是否必填)
 FIELDS = [
@@ -39,6 +41,7 @@ FIELDS = [
     ('DIST_NAME', '产物文件夹名（上传时）', False),
     ('UPLOAD_WITH_DIR', '是否带文件夹一起上传 true|false', False),
     ('PORTAL_PROJECT', '门户项目本地绝对路径（子模块挂门户时填写）', False),
+    ('PORTAL_URL', '门户访问地址（子模块返回门户用，完整 URL）', False),
 ]
 
 REQUIRED = [k for k, _, req in FIELDS if req]
@@ -94,6 +97,101 @@ def read_profile(name):
                 v = v[1:-1]
             data[k] = v
     return data
+
+
+def load_hosts():
+    """读取全局主机/门户记录 ~/.md2website/hosts.json，返回 hosts 列表。"""
+    if not os.path.isfile(HOSTS_FILE):
+        return []
+    try:
+        with open(HOSTS_FILE, encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    hosts = data.get('hosts') if isinstance(data, dict) else None
+    return hosts if isinstance(hosts, list) else []
+
+
+def save_hosts(hosts):
+    """写入全局主机/门户记录，权限 600。"""
+    d = os.path.dirname(HOSTS_FILE)
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
+    with open(HOSTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump({'version': 1, 'hosts': hosts}, f, ensure_ascii=False, indent=2)
+    try:
+        os.chmod(HOSTS_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def record_host(host_info):
+    """把主机 + 门户信息 upsert 进全局记录。
+    host_info: {
+        'host', 'port', 'user', 'password', 'ssh_key', 'note',
+        'portals': [{'name', 'url', 'root_dir'}, ...]
+    }
+    主机按 host+port+user 定位（合并登录信息）；门户按 root_dir 定位（更新或追加）。
+    """
+    hosts = load_hosts()
+    target = None
+    for h in hosts:
+        if (h.get('host') == host_info['host']
+                and h.get('port') == host_info.get('port')
+                and h.get('user') == host_info['user']):
+            target = h
+            break
+    if target is None:
+        target = {'host': host_info['host'], 'port': host_info.get('port', '22'),
+                  'user': host_info['user'], 'password': '', 'ssh_key': '',
+                  'note': '', 'portals': []}
+        hosts.append(target)
+    for key in ('port', 'password', 'ssh_key', 'note'):
+        val = host_info.get(key, '')
+        if val:
+            target[key] = val
+    portals = target.setdefault('portals', [])
+    if not isinstance(portals, list):
+        portals = []
+        target['portals'] = portals
+    for p in host_info.get('portals', []):
+        found = None
+        for existing in portals:
+            if existing.get('root_dir') == p.get('root_dir'):
+                found = existing
+                break
+        if found is not None:
+            for key in ('name', 'url', 'root_dir'):
+                if p.get(key):
+                    found[key] = p[key]
+        else:
+            portals.append(p)
+    save_hosts(hosts)
+    return target
+
+
+def list_portals():
+    """扁平化列出所有门户候选（含主机登录信息），供选择落地。"""
+    out = []
+    for h in load_hosts():
+        for p in h.get('portals', []):
+            if not isinstance(p, dict):
+                continue
+            out.append({
+                'host': h.get('host', ''),
+                'port': h.get('port', '22'),
+                'user': h.get('user', ''),
+                'password': h.get('password', ''),
+                'ssh_key': h.get('ssh_key', ''),
+                'note': h.get('note', ''),
+                'name': p.get('name', ''),
+                'url': p.get('url', ''),
+                'root_dir': p.get('root_dir', ''),
+            })
+    return out
 
 
 def write_profile(name, values):
@@ -247,7 +345,7 @@ FIELD_YML = {
     'REMOTE_DIR': 'remote_dir', 'SSH_KEY': 'ssh_key', 'SITE_BASE': 'site_base',
     'CLEAN_MODE': 'clean_mode', 'BUILD_BEFORE_DEPLOY': 'build_before_deploy',
     'REMOTE_TMP': 'remote_tmp', 'DIST_NAME': 'dist_name', 'UPLOAD_WITH_DIR': 'upload_with_dir',
-    'PORTAL_PROJECT': 'portal_project',
+    'PORTAL_PROJECT': 'portal_project', 'PORTAL_URL': 'portal_url',
 }
 
 
@@ -343,12 +441,25 @@ def cmd_wizard(args):
     if not site_base.endswith('/'):
         site_base += '/'
 
+    portal_url = input('门户访问地址（可选，例如 https://docs.kfxh.work，留空则不写入全局备选）: ').strip()
+
     data = {
         'HOST': host, 'USER': user, 'PASSWORD': password, 'REMOTE_DIR': remote_dir,
         'SSH_KEY': ssh_key, 'PORT': port, 'SITE_BASE': site_base,
+        'PORTAL_URL': portal_url,
     }
     local = _write_local_yml(project, data, 'wizard 交互配置')
     print(f'已写入: {local}')
+
+    # 填了门户访问地址则自动写入全局备选（主机+门户，upsert 去重）
+    if portal_url:
+        portal_name = urlsplit(portal_url).netloc or os.path.basename(remote_dir.rstrip('/'))
+        record_host({
+            'host': host, 'port': port, 'user': user,
+            'password': password, 'ssh_key': ssh_key, 'note': '',
+            'portals': [{'name': portal_name, 'url': portal_url, 'root_dir': remote_dir}],
+        })
+        print(f'已记录到全局备选: {HOSTS_FILE}')
     return 0
 
 
@@ -389,6 +500,144 @@ def read_deploy_config(project):
             if prof:
                 return prof
     return data
+
+
+def _site_name(project):
+    """取站点标识名：优先 package.json 的 name，否则目录名。"""
+    pkg = os.path.join(project, 'package.json')
+    if os.path.isfile(pkg):
+        try:
+            name = json.load(open(pkg, encoding='utf-8')).get('name')
+            if name:
+                return name
+        except (OSError, ValueError):
+            pass
+    return re.sub(r'[^A-Za-z0-9-]+', '-', os.path.basename(project).lower()).strip('-') or 'module'
+
+
+def _url_path(url):
+    """从门户完整 URL 解析其 path 部分（确保以 / 开头结尾）。"""
+    path = urlsplit(url or '').path or '/'
+    if not path.endswith('/'):
+        path += '/'
+    return path
+
+
+def _land_as_submodule(project, portal):
+    """把选中的门户落地为站点子模块配置，写入 .deploy-local.yml。"""
+    site_name = _site_name(project)
+    root_dir = (portal.get('root_dir') or '').rstrip('/')
+    base_path = _url_path(portal.get('url'))
+    remote_dir = root_dir + '/' + site_name
+    site_base = base_path + site_name + '/'
+    data = {
+        'HOST': portal.get('host', ''),
+        'PORT': portal.get('port', '22'),
+        'USER': portal.get('user', ''),
+        'PASSWORD': portal.get('password', ''),
+        'SSH_KEY': portal.get('ssh_key', ''),
+        'REMOTE_DIR': remote_dir,
+        'SITE_BASE': site_base,
+        'PORTAL_URL': portal.get('url', ''),
+    }
+    local = _write_local_yml(project, data, '全局记录选择')
+    return local, data
+
+
+def cmd_hosts_list(args):
+    """列出全局记录里的主机与门户。"""
+    hosts = load_hosts()
+    if args.json:
+        print(json.dumps({'hosts': hosts}, ensure_ascii=False, indent=2))
+        return 0
+    if not hosts:
+        print('暂无全局主机/门户记录')
+        return 0
+    for h in hosts:
+        print(f'主机 {h.get("user")}@{h.get("host")}:{h.get("port")}'
+              + (f'  （{h.get("note")}）' if h.get('note') else ''))
+        for p in h.get('portals', []):
+            print(f'  - {p.get("name")}  {p.get("url")}  → {p.get("root_dir")}')
+    return 0
+
+
+def cmd_hosts_rm(args):
+    """删除全局记录里的主机或门户。"""
+    hosts = load_hosts()
+    target_host = None
+    for h in hosts:
+        if (h.get('host') == args.host
+                and str(h.get('port', '22')) == str(args.port or '22')
+                and h.get('user') == args.user):
+            target_host = h
+            break
+    if target_host is None:
+        print(f'未找到主机 {args.user}@{args.host}:{args.port or "22"}', file=sys.stderr)
+        return 1
+    if args.root_dir:
+        portals = target_host.get('portals', [])
+        kept = [p for p in portals if p.get('root_dir') != args.root_dir]
+        if len(kept) == len(portals):
+            print(f'未找到门户 root_dir={args.root_dir}', file=sys.stderr)
+            return 1
+        target_host['portals'] = kept
+        print(f'已删除门户: {args.root_dir}')
+    else:
+        hosts.remove(target_host)
+        print(f'已删除主机: {args.user}@{args.host}:{args.port or "22"}')
+    save_hosts(hosts)
+    return 0
+
+
+def cmd_choose(args):
+    """从全局记录选择一个门户，落地为当前站点的子模块部署配置。"""
+    project = os.path.abspath(args.project)
+    if not os.path.isdir(project):
+        print(f'目录不存在: {project}', file=sys.stderr)
+        return 1
+
+    portals = list_portals()
+    if not portals:
+        if not sys.stdin.isatty():
+            print(json.dumps({'action': 'no_hosts'}, ensure_ascii=False))
+        return 3
+
+    # 非交互且未指定 --index：输出候选 JSON 供 Agent 决策
+    if args.index is None and not sys.stdin.isatty():
+        print(json.dumps({'action': 'choose_portal', 'portals': portals},
+                         ensure_ascii=False, indent=2))
+        return 2
+
+    idx = args.index
+    if idx is None:
+        for i, p in enumerate(portals, 1):
+            print(f'{i}) {p["name"]}  {p["url"]}')
+            print(f'   {p["user"]}@{p["host"]}:{p["port"]}  → {p["root_dir"]}'
+                  + (f'  （{p["note"]}）' if p.get('note') else ''))
+        while True:
+            try:
+                raw = input(f'选择要挂载的门户 [1-{len(portals)}，q 取消]: ').strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 1
+            if raw.lower() in ('q', 'quit', 'exit'):
+                return 1
+            if raw.isdigit() and 1 <= int(raw) <= len(portals):
+                idx = int(raw)
+                break
+            print(f'  输入无效，请填 1-{len(portals)}')
+
+    if not (isinstance(idx, int) and 1 <= idx <= len(portals)):
+        print(f'无效的门户编号: {idx}', file=sys.stderr)
+        return 1
+    portal = portals[idx - 1]
+    local, data = _land_as_submodule(project, portal)
+    print(f'已选择门户: {portal["name"]}  {portal["url"]}')
+    print(f'  已写入: {local}')
+    print(f'  REMOTE_DIR = {data["REMOTE_DIR"]}')
+    print(f'  SITE_BASE  = {data["SITE_BASE"]}')
+    print(f'  PORTAL_URL = {data["PORTAL_URL"]}')
+    return 0
 
 
 def cmd_submodule(args):
@@ -475,12 +724,24 @@ def main():
     p.add_argument('--project', required=True)
     p = sub.add_parser('submodule')
     p.add_argument('--project', required=True)
+    p = sub.add_parser('hosts', help='列出全局主机/门户记录')
+    p.add_argument('--json', action='store_true', help='输出 JSON')
+    p.add_argument('--rm', action='store_true', help='删除（需 --host --user，可选 --port --root_dir）')
+    p.add_argument('--host')
+    p.add_argument('--port')
+    p.add_argument('--user')
+    p.add_argument('--root_dir')
+    p = sub.add_parser('choose', help='从全局记录选择门户落地为子模块')
+    p.add_argument('--project', required=True)
+    p.add_argument('--index', type=int, default=None, help='直接指定门户编号（1 起）')
 
     args = ap.parse_args()
     return {
         'path': cmd_path, 'show': cmd_show, 'check': cmd_check,
         'set': cmd_set, 'list': cmd_list, 'bind': cmd_bind, 'cache': cmd_cache,
         'wizard': cmd_wizard, 'submodule': cmd_submodule,
+        'hosts': (lambda a: cmd_hosts_rm(a) if a.rm else cmd_hosts_list(a)),
+        'choose': cmd_choose,
     }[args.cmd](args)
 
 

@@ -128,36 +128,6 @@ def pick_main_md(dirpath):
     return mds[0]
 
 
-def dir_title(dirpath):
-    """章节标题：取主文档首个 H1，否则用目录名"""
-    main = pick_main_md(dirpath)
-    if main:
-        try:
-            for line in open(os.path.join(dirpath, main), encoding='utf-8', errors='replace'):
-                m = re.match(r'^#\s+(.+?)\s*$', line)
-                if m:
-                    return m.group(1).strip(), main
-                if line.strip():
-                    break
-        except OSError:
-            pass
-    return os.path.basename(dirpath), main
-
-
-def first_h1(path):
-    """提取 md 文件的首个 H1 标题，无则返回 None"""
-    try:
-        for line in open(path, encoding='utf-8', errors='replace'):
-            m = re.match(r'^#\s+(.+?)\s*$', line)
-            if m:
-                return m.group(1).strip()
-            if line.strip():
-                break
-    except OSError:
-        pass
-    return None
-
-
 def build_dir_tree(dirpath, slug, relpath=''):
     """递归生成目录的侧边栏树，返回 items 列表（支持多级子目录）。"""
     mds = sorted(f for f in os.listdir(dirpath)
@@ -170,7 +140,7 @@ def build_dir_tree(dirpath, slug, relpath=''):
     items = []
 
     for fn in mds:
-        title = first_h1(os.path.join(dirpath, fn)) or os.path.splitext(fn)[0]
+        title = os.path.splitext(fn)[0]
         if fn == main:
             link = f"/{slug}/" if relpath == '' else f"/{slug}/{relpath}/"
         else:
@@ -372,7 +342,7 @@ export default defineConfig({
       { text: '首页', link: '/' },
       { text: '文档', link: '/@@FIRST@@/' },
       // 子模块挂门户时，deploy.sh 会注入 PORTAL_URL 环境变量，添加「返回门户」入口
-      ...(process.env.PORTAL_URL ? [{ text: '返回门户', link: process.env.PORTAL_URL, target: '_self' }] : [])
+      ...(process.env.PORTAL_URL ? [{ text: '返回门户', link: process.env.PORTAL_URL, target: '_blank' }] : [])
     ],
     sidebar: [
       {
@@ -509,11 +479,15 @@ PORTAL_MODULE_GRID = '''<script setup>
 import { useModuleCatalog } from './moduleCatalog.mjs'
 
 const { modules, loading, error, load } = useModuleCatalog()
+
+function go(link) {
+  window.location.href = link
+}
 </script>
 
 <template>
   <div class="module-grid">
-    <a v-for="(m, i) in modules" :key="m.name" :href="m.link" target="_self" class="module-card">
+    <a v-for="(m, i) in modules" :key="m.name" :href="m.link" @click.prevent="go(m.link)" class="module-card">
       <span class="module-card-index" aria-hidden="true">{{ String(i + 1).padStart(2, '0') }}</span>
       <div class="module-card-title">{{ m.title }}</div>
       <div class="module-card-desc">{{ m.description }}</div>
@@ -610,11 +584,15 @@ function closeMenu() {
 function closeOutside(event) {
   if (!event.currentTarget.contains(event.relatedTarget)) closeMenu()
 }
+
+function go(link) {
+  window.location.href = link
+}
 </script>
 
 <template>
   <nav class="portal-nav" :class="{ 'portal-nav-mobile': mobile }" aria-label="模块导航">
-    <a v-for="m in frequent" :key="m.name" :href="m.link" target="_self" class="portal-nav-trigger">{{ m.title }}</a>
+    <a v-for="m in frequent" :key="m.name" :href="m.link" @click.prevent="go(m.link)" class="portal-nav-trigger">{{ m.title }}</a>
     <details ref="menu" class="portal-nav-item" @keydown.esc="closeMenu" @focusout="closeOutside">
       <summary class="portal-nav-trigger">全部模块 <span class="portal-nav-caret" aria-hidden="true">▾</span></summary>
       <div class="portal-nav-dropdown">
@@ -623,9 +601,8 @@ function closeOutside(event) {
       <p v-else-if="modules.length === 0">暂无模块</p>
       <a v-for="m in modules" :key="m.name"
          :href="m.link"
-         target="_self"
-         class="portal-nav-link"
-         @click="closeMenu">
+         @click.prevent="go(m.link)"
+         class="portal-nav-link">
         <span class="portal-nav-link-title">{{ m.title }}</span>
         <span class="portal-nav-link-desc" v-if="m.description">{{ m.description }}</span>
       </a>
@@ -1584,6 +1561,21 @@ def main():
             )
             print(f'  ✓ {num} {name}（{len(tree)} 项）→ /{slug}/')
 
+    # ---- 根级散装 Markdown 引用的图片目录（如 assets/）一并复制 ----
+    for dirpath, dirnames, filenames in os.walk(src):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith('.')]
+        relp = os.path.relpath(dirpath, src)
+        if relp == '.':
+            continue
+        target_dir = os.path.join(docs, relp)
+        for fn in filenames:
+            if fn in SKIP_FILES:
+                continue
+            if os.path.splitext(fn)[1].lower() in IMG_EXTS:
+                os.makedirs(target_dir, exist_ok=True)
+                shutil.copy2(os.path.join(dirpath, fn), os.path.join(target_dir, fn))
+                total['img'] += 1
+
     # ---- 根级散装 Markdown ----
     for fn in root_mds:
         stem = os.path.splitext(fn)[0]
@@ -1602,15 +1594,7 @@ def main():
                 f.write(text)
         else:
             shutil.copy2(os.path.join(src, fn), target)
-        heading, _ = dir_title(src)
-        try:
-            for line in open(target, encoding='utf-8', errors='replace'):
-                m = re.match(r'^#\s+(.+?)\s*$', line)
-                if m:
-                    heading = m.group(1).strip()
-                    break
-        except OSError:
-            pass
+        heading = stem
         nav_entries.append({"type": "single", "text": heading, "link": f"/{slug}"})
         total['md'] += 1
         print(f'  ✓ {heading}  → /{slug}')

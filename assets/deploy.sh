@@ -103,14 +103,27 @@ elif [ -f "$SCRIPT_DIR/deploy.conf" ]; then
   CONF="$SCRIPT_DIR/deploy.conf"
   CONF_SOURCE="项目内 deploy.conf（旧版）"
 else
-  # 没有任何配置：交互终端下直接进入向导，结果写入本站点目录
-  if [ -t 0 ] && [ -n "$SKILL_DIR" ] && [ -f "$SKILL_DIR/scripts/profile.py" ]; then
-    command -v python3 >/dev/null 2>&1 || die "未找到 python3，无法启动配置向导"
-    info "未找到部署配置，进入交互式配置"
-    python3 "$SKILL_DIR/scripts/profile.py" wizard --project "$SCRIPT_DIR" \
-      || die "配置未完成，已中止部署"
-    CONF="$SCRIPT_DIR/.deploy-local.yml"
-    CONF_SOURCE="站点本地配置 .deploy-local.yml"
+  # 没有任何配置：优先从全局记录选择门户，否则进入向导
+  if [ -n "$SKILL_DIR" ] && [ -f "$SKILL_DIR/scripts/profile.py" ]; then
+    command -v python3 >/dev/null 2>&1 || die "未找到 python3，无法进行部署配置"
+    if [ -t 0 ]; then
+      # 交互终端：先尝试从全局记录选门户，无候选或取消则走向导
+      info "未找到部署配置，先尝试从全局记录选择门户"
+      if python3 "$SKILL_DIR/scripts/profile.py" choose --project "$SCRIPT_DIR"; then
+        CONF="$SCRIPT_DIR/.deploy-local.yml"
+        CONF_SOURCE="站点本地配置 .deploy-local.yml（全局记录选择）"
+      else
+        info "未选择门户，进入交互式配置"
+        python3 "$SKILL_DIR/scripts/profile.py" wizard --project "$SCRIPT_DIR" \
+          || die "配置未完成，已中止部署"
+        CONF="$SCRIPT_DIR/.deploy-local.yml"
+        CONF_SOURCE="站点本地配置 .deploy-local.yml"
+      fi
+    else
+      # 非交互：输出候选 JSON 供 Agent 决策，落地后重跑 ./deploy.sh
+      python3 "$SKILL_DIR/scripts/profile.py" choose --project "$SCRIPT_DIR"
+      exit 3
+    fi
   else
     die "未找到部署配置。请在站点目录执行交互式配置（支持账号密码或 SSH 密钥登录）：
    python3 ${SKILL_DIR:-<skill>}/scripts/profile.py wizard --project \"$SCRIPT_DIR\"
@@ -145,7 +158,7 @@ load_conf() {
     val="${line#*=}"
     key="$(printf '%s' "$key" | tr -d '[:space:]')"
     case "$key" in
-      HOST|PORT|USER|PASSWORD|REMOTE_DIR|SSH_KEY|SSH_KEY_PASSPHRASE|SITE_BASE|CLEAN_MODE|BUILD_BEFORE_DEPLOY|REMOTE_TMP|DIST_NAME|UPLOAD_WITH_DIR|PORTAL_PROJECT) ;;
+      HOST|PORT|USER|PASSWORD|REMOTE_DIR|SSH_KEY|SSH_KEY_PASSPHRASE|SITE_BASE|CLEAN_MODE|BUILD_BEFORE_DEPLOY|REMOTE_TMP|DIST_NAME|UPLOAD_WITH_DIR|PORTAL_PROJECT|PORTAL_URL) ;;
       *) continue ;;
     esac
     # 去掉行尾注释（# 前需有空白），再处理引号
@@ -193,6 +206,7 @@ load_yml() {
       dist_name|DIST_NAME) key="DIST_NAME" ;;
       upload_with_dir|UPLOAD_WITH_DIR) key="UPLOAD_WITH_DIR" ;;
       portal_project|PORTAL_PROJECT) key="PORTAL_PROJECT" ;;
+      portal_url|PORTAL_URL) key="PORTAL_URL" ;;
       *) continue ;;
     esac
     val="${val//\$HOME/$HOME}"
@@ -280,7 +294,10 @@ if [ "$DO_BUILD" != "false" ]; then
   export VP_BASE="$SITE_BASE"
 
   # 返回门户入口：子模块挂门户时，注入门户完整 URL，供 config.mjs 的 nav 显示「返回门户」
-  if [ -n "${PORTAL_PROJECT:-}" ] && [ -f "$PORTAL_PROJECT/.deploy-local.yml" ]; then
+  if [ -n "${PORTAL_URL:-}" ]; then
+    # 站点本地配置/全局记录选择已显式给出门户 URL，直接使用
+    export PORTAL_URL="$PORTAL_URL"
+  elif [ -n "${PORTAL_PROJECT:-}" ] && [ -f "$PORTAL_PROJECT/.deploy-local.yml" ]; then
     # 优先读取门户显式配置的 portal_url（含协议/域名/端口），否则从 remote_dir 目录名推断域名
     PORTAL_URL_CFG="$(grep -E '^[[:space:]]*portal_url:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*portal_url:[[:space:]]*//' | tr -d '[:space:]')"
     if [ -n "$PORTAL_URL_CFG" ]; then
@@ -485,15 +502,43 @@ REMOTE_INDEX_OK=$(ssh_run "test -f '$INDEX_PATH' && echo yes" 2>/dev/null || tru
 REMOTE_FILE_COUNT=$(ssh_run "find '$REMOTE_DIR' -type f | wc -l" | tr -d ' ')
 ok "线上文件数：$REMOTE_FILE_COUNT"
 
-# 站点域名：从 REMOTE_DIR 推断（宝塔惯例 /www/wwwroot/<域名>），推断不出再回退 HOST
-DOMAIN="$(printf '%s' "$REMOTE_DIR" | sed -E 's#^/www/wwwroot/([^/]+).*#\1#')"
-case "$DOMAIN" in
-  ''|*/*) DOMAIN="${HOST}" ;;
-esac
-URL_PATH="$(printf '%s' "$REMOTE_DIR" | sed -E 's#^/www/wwwroot/[^/]+##')"
+# ---------- 站点真实访问地址 ----------
+# 优先用显式配置的 portal_url（含协议/域名/端口）；子模块拼「门户地址 + 站点子路径」；
+# 均未配置时回退到从 REMOTE_DIR 推断的 https 地址（仅作提示，不代表真实协议/端口）。
+SITE_URL=""
+if [ "$PORTAL_ROLE" = "portal" ]; then
+  # 门户站点：直接使用自身 portal_url
+  SITE_URL="${PORTAL_URL:-}"
+elif [ -n "${PORTAL_PROJECT:-}" ]; then
+  # 子模块：门户地址 + 站点子路径（PORTAL_URL 在构建阶段已解析为门户地址；
+  # 此处再兜底读门户配置，兼容 --no-build 跳过构建块的场景）
+  _base_url="${PORTAL_URL:-}"
+  if [ -z "$_base_url" ] && [ -f "$PORTAL_PROJECT/.deploy-local.yml" ]; then
+    _base_url="$(grep -E '^[[:space:]]*portal_url:' "$PORTAL_PROJECT/.deploy-local.yml" | head -1 | sed -E 's/.*portal_url:[[:space:]]*//' | tr -d '[:space:]')"
+  fi
+  if [ -n "$_base_url" ]; then
+    SITE_URL="${_base_url%/}/${SITE_BASE#/}"
+    SITE_URL="${SITE_URL%/}/"
+  fi
+  unset _base_url
+else
+  # 独立站点：优先自身 portal_url
+  SITE_URL="${PORTAL_URL:-}"
+fi
+
+if [ -z "$SITE_URL" ]; then
+  # 站点域名：从 REMOTE_DIR 推断（宝塔惯例 /www/wwwroot/<域名>），推断不出再回退 HOST
+  DOMAIN="$(printf '%s' "$REMOTE_DIR" | sed -E 's#^/www/wwwroot/([^/]+).*#\1#')"
+  case "$DOMAIN" in
+    ''|*/*) DOMAIN="${HOST}" ;;
+  esac
+  URL_PATH="$(printf '%s' "$REMOTE_DIR" | sed -E 's#^/www/wwwroot/[^/]+##')"
+  SITE_URL="https://$DOMAIN$URL_PATH/"
+fi
+
 printf '\n%s部署成功%s\n' "$C_OK" "$C_RESET"
 printf '  时间    %s\n' "$STAMP"
-printf '  地址    https://%s%s/\n' "$DOMAIN" "$URL_PATH"
+printf '  地址    %s\n' "$SITE_URL"
 printf '  目录    %s\n\n' "$REMOTE_DIR"
 
 # 子模块：配置了 PORTAL_PROJECT 时，自动重建并上传门户

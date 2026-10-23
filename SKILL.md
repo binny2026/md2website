@@ -218,6 +218,46 @@ python3 "$SKILL_DIR"/scripts/profile.py bind --project "<输出目录>" --name <
 
 配置档是纯 `KEY=VALUE` 文本，**deploy.sh 只解析白名单字段，不 source 执行**，避免配置文件被写入任意命令。
 
+## 全局主机 / 门户记忆（部署备选）
+
+部署时若站点没有本地 `.deploy-local.yml`，会从全局记录 `~/.md2website/hosts.json` 列出候选门户供你选择，选中即落地为子模块，无需每次重填服务器信息。
+
+**数据结构**：一个主机可挂多个门户，每个门户唯一对应「访问地址 url + 根目录 root_dir」。
+
+```json
+{
+  "version": 1,
+  "hosts": [
+    {
+      "host": "1.2.3.4", "port": "22", "user": "root",
+      "password": "***", "ssh_key": "~/.ssh/id_ed25519",
+      "portals": [
+        { "name": "文档门户", "url": "https://docs.kfxh.work", "root_dir": "/www/wwwroot/docs.kfxh.work" }
+      ]
+    }
+  ]
+}
+```
+
+**记录时机**：`profile.py wizard` 配置时填写「门户访问地址」即自动写入全局记录（按 `host+port+user` 合并主机、按 `root_dir` 合并门户）。
+
+| 需求 | 命令 |
+| --- | --- |
+| 列出全局主机/门户 | `profile.py hosts` / `profile.py hosts --json` |
+| 删除一个门户 | `profile.py hosts --rm --host H --user U --root_dir /路径` |
+| 删除整个主机 | `profile.py hosts --rm --host H --user U` |
+| 从全局记录选门户落地 | `profile.py choose --project <站点目录>` |
+| 直接指定门户落地 | `profile.py choose --project <站点目录> --index 1` |
+
+**部署时配置来源优先级**：
+
+```
+站点 .deploy-local.yml  →  .deploy-profile 配置档  →  deploy.conf（旧版）
+  →  全局 hosts.json 候选选择  →  wizard 向导
+```
+
+选中门户落地为子模块时自动推导：`REMOTE_DIR = root_dir/<站点名>`、`SITE_BASE = 门户 url 的 path + <站点名>/`、`portal_url = 门户 url`（供「返回门户」入口使用）。
+
 ## 章节识别规则
 
 `init.py` 按以下规则判断章节，不合预期时用 `--chapters` 思路手工调整 config：
