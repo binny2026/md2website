@@ -32,6 +32,11 @@ REGISTRY_FILE = os.path.join(REGISTRY_DIR, 'sites.json')
 GENERATED_ITEMS = ('docs', 'package.json', '.gitignore', 'DEPLOY.md', 'deploy.sh')
 
 
+def posix(p):
+    """把路径统一成 POSIX 分隔符，用作 URL / 相对路径键。"""
+    return p.replace(os.sep, '/')
+
+
 def _now():
     return datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -182,8 +187,8 @@ def build_dir_tree(dirpath, slug, relpath=''):
     return items
 
 
-def build_md_map(src_dir, slug):
-    """章节内每个源 md 文件名 → 站点 URL 的映射（递归，供死链改写用）"""
+def build_chapter_url_map(src_dir, slug, src_root):
+    """章节内每个源 md 的「源相对路径(POSIX) → 站点 URL」映射（递归）。"""
     m = {}
     for dirpath, dirnames, filenames in os.walk(src_dir):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith('.')]
@@ -197,46 +202,46 @@ def build_md_map(src_dir, slug):
             else:
                 base = f"/{slug}" if relp == '.' else f"/{slug}/{relp}"
                 url = f"{base}/{os.path.splitext(fn)[0]}"
-            m[fn] = url
+            src_rel = posix(os.path.relpath(os.path.join(dirpath, fn), src_root))
+            m[src_rel] = url
     return m
 
 
-def fix_dead_links(docs, md_map):
-    """把指向源 .md 文件的 markdown 链接改写为站点 URL，避免站点死链报错。"""
-    if not md_map:
-        return 0
+def rewrite_md_links(text, src_file_dir, url_map):
+    """把正文里指向源 .md 的链接改写为站点 URL（保留锚点，忽略外链/非 md）。
+
+    优先按「源相对路径」精确解析；解析不到时，仅当该文件名在映射里全局唯一
+    时才按文件名兜底匹配（避免同名文件互相指错）。返回 (新文本, 改写数)。
+    """
+    if not url_map:
+        return text, 0
     link_re = re.compile(r'\]\(([^)]+)\)')
-    fixed = 0
-    for dirpath, dirnames, filenames in os.walk(docs):
-        dirnames[:] = [d for d in dirnames if d not in {'.vitepress', 'node_modules'}]
-        for fn in filenames:
-            if not fn.lower().endswith(('.md', '.markdown')):
-                continue
-            path = os.path.join(dirpath, fn)
-            try:
-                text = open(path, encoding='utf-8').read()
-            except OSError:
-                continue
+    by_name = {}
+    for k, u in url_map.items():
+        by_name.setdefault(os.path.basename(k), []).append(u)
+    changed = 0
 
-            changed = 0
+    def repl(m):
+        nonlocal changed
+        target = m.group(1).strip()
+        anchor = ''
+        if '#' in target:
+            target, anchor = target.split('#', 1)
+            anchor = '#' + anchor
+        if '://' in target or target.startswith('//') or not target.lower().endswith(('.md', '.markdown')):
+            return m.group(0)
+        resolved = posix(os.path.normpath(os.path.join(src_file_dir, target)))
+        url = url_map.get(resolved)
+        if url is None:
+            cands = by_name.get(os.path.basename(target), [])
+            if len(cands) == 1:
+                url = cands[0]
+        if url:
+            changed += 1
+            return f']({url}{anchor})'
+        return m.group(0)
 
-            def repl(m):
-                nonlocal changed
-                target = m.group(1).strip()
-                if not target.lower().endswith('.md'):
-                    return m.group(0)
-                url = md_map.get(os.path.basename(target))
-                if url:
-                    changed += 1
-                    return f']({url})'
-                return m.group(0)
-
-            new_text = link_re.sub(repl, text)
-            if changed:
-                with open(path, 'w', encoding='utf-8') as f:
-                    f.write(new_text)
-                fixed += changed
-    return fixed
+    return link_re.sub(repl, text), changed
 
 
 def slugify(name, used):
@@ -1361,10 +1366,10 @@ def write(path, content):
         f.write(content)
 
 
-def copy_chapter(src_dir, dst_dir):
-    """复制目录下所有 md 与图片，保持相对结构（每个子目录的主文档改为 index.md）"""
+def copy_chapter(src_dir, dst_dir, src_root, url_map):
+    """复制目录下所有 md 与图片，保持相对结构；改写正文指向 .md 的链接为站点 URL。"""
     os.makedirs(dst_dir, exist_ok=True)
-    count = {'md': 0, 'img': 0}
+    count = {'md': 0, 'img': 0, 'link': 0}
 
     for dirpath, dirnames, filenames in os.walk(src_dir):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith('.')]
@@ -1382,7 +1387,17 @@ def copy_chapter(src_dir, dst_dir):
             if ext in ('.md', '.markdown'):
                 # 主文档改名为 index.md，其余保留原名
                 out_name = 'index.md' if (src == main_src) else fn
-                shutil.copy2(src, os.path.join(target_dir, out_name))
+                try:
+                    text = open(src, encoding='utf-8', errors='replace').read()
+                except OSError:
+                    text = None
+                if text is not None:
+                    text, n = rewrite_md_links(text, posix(os.path.relpath(dirpath, src_root)), url_map)
+                    count['link'] += n
+                    with open(os.path.join(target_dir, out_name), 'w', encoding='utf-8') as f:
+                        f.write(text)
+                else:
+                    shutil.copy2(src, os.path.join(target_dir, out_name))
                 count['md'] += 1
             elif ext in IMG_EXTS:
                 shutil.copy2(src, os.path.join(target_dir, fn))
@@ -1512,20 +1527,37 @@ def main():
     print(f'输出:   {out}')
     print(f'发现 {len(chapters)} 个章节目录，{len(root_mds)} 个根级 Markdown\n')
 
-    # ---- 逐章复制 ----
+    # ---- 预计算 slug 与「源相对路径 → URL」映射（供跨章节链接改写）----
     used_slugs = set()
+    url_map = {}
+    chapter_slugs = {}
+    for name in chapters:
+        src_dir = os.path.join(src, name)
+        slug = slugify(name, used_slugs)
+        chapter_slugs[name] = slug
+        url_map.update(build_chapter_url_map(src_dir, slug, src))
+
+    root_slugs = {}
+    for fn in root_mds:
+        stem = os.path.splitext(fn)[0]
+        if stem.lower() in ('readme', 'index'):
+            continue
+        slug = slugify(stem, used_slugs)
+        root_slugs[fn] = slug
+        url_map[posix(fn)] = f"/{slug}"
+
+    # ---- 逐章复制 ----
     nav_entries = []
     feature_items = []
-    total = {'md': 0, 'img': 0}
-    md_map = {}
+    total = {'md': 0, 'img': 0, 'link': 0}
 
     for idx, name in enumerate(chapters, 1):
         src_dir = os.path.join(src, name)
-        slug = slugify(name, used_slugs)
-        cnt = copy_chapter(src_dir, os.path.join(docs, slug))
+        slug = chapter_slugs[name]
+        cnt = copy_chapter(src_dir, os.path.join(docs, slug), src, url_map)
         total['md'] += cnt['md']
         total['img'] += cnt['img']
-        md_map.update(build_md_map(src_dir, slug))
+        total['link'] += cnt['link']
         num = f'{idx:02d}'
 
         tree = build_dir_tree(src_dir, slug)
@@ -1555,10 +1587,19 @@ def main():
         stem = os.path.splitext(fn)[0]
         if stem.lower() in ('readme', 'index'):
             continue
-        slug = slugify(stem, used_slugs)
-        md_map[fn] = f"/{slug}"
+        slug = root_slugs[fn]
         target = os.path.join(docs, slug + '.md')
-        shutil.copy2(os.path.join(src, fn), target)
+        try:
+            text = open(os.path.join(src, fn), encoding='utf-8', errors='replace').read()
+        except OSError:
+            text = None
+        if text is not None:
+            text, n = rewrite_md_links(text, '.', url_map)
+            total['link'] += n
+            with open(target, 'w', encoding='utf-8') as f:
+                f.write(text)
+        else:
+            shutil.copy2(os.path.join(src, fn), target)
         heading, _ = dir_title(src)
         try:
             for line in open(target, encoding='utf-8', errors='replace'):
@@ -1634,14 +1675,11 @@ def main():
     except Exception as e:
         print(f'  ! 自动修复跳过（{e}），可手动运行 fix.py')
 
-    # 修复跨章节死链：把指向源 .md 文件的链接改写为站点 URL
-    dead_fixed = fix_dead_links(docs, md_map)
-
     summary = f'\n完成：{total["md"]} 篇 Markdown、{total["img"]} 张图片'
     if fixed:
         summary += f'，自动修复 {fixed} 处语法冲突'
-    if dead_fixed:
-        summary += f'，改写死链 {dead_fixed} 处'
+    if total['link']:
+        summary += f'，改写 md 链接 {total["link"]} 处'
     print(summary)
 
     # 环境检测：给出与当前机器匹配的后续指引
