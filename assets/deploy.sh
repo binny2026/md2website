@@ -207,6 +207,7 @@ load_yml() {
       upload_with_dir|UPLOAD_WITH_DIR) key="UPLOAD_WITH_DIR" ;;
       portal_project|PORTAL_PROJECT) key="PORTAL_PROJECT" ;;
       portal_url|PORTAL_URL) key="PORTAL_URL" ;;
+      color|COLOR) key="COLOR" ;;
       *) continue ;;
     esac
     val="${val//\$HOME/$HOME}"
@@ -340,11 +341,12 @@ fi
 
 [ -d "$DIST_DIR" ] || die "找不到构建产物: $DIST_DIR"
 
-# 写 site.json（门户扫描子目录时据此识别并取标题）；门户自身不写
+# 写 site.json（门户扫描子目录时据此识别并取标题/颜色）；门户自身不写
 if [ "$PORTAL_ROLE" != "portal" ]; then
   export MD2VP_SITE_TITLE="${SITE_TITLE:-$SUBDIR_NAME}"
   export MD2VP_DIST="$DIST_DIR"
-  python3 -c "import json,os; json.dump({'title': os.environ['MD2VP_SITE_TITLE'], 'description': ''}, open(os.path.join(os.environ['MD2VP_DIST'], 'site.json'), 'w', encoding='utf-8'), ensure_ascii=False)" \
+  export MD2VP_COLOR="${COLOR:-}"
+  python3 -c "import json,os; m={'title': os.environ['MD2VP_SITE_TITLE'], 'description': ''}; c=os.environ.get('MD2VP_COLOR','').strip(); m['color']=c if c else None; json.dump(m, open(os.path.join(os.environ['MD2VP_DIST'], 'site.json'), 'w', encoding='utf-8'), ensure_ascii=False)" \
     || warn "写入 site.json 失败（门户将用目录名作为标题）"
 fi
 

@@ -247,6 +247,79 @@ def to_ascii_slug(title, fallback='md2website'):
     return s or fallback
 
 
+_R_SPECIAL = re.compile(r'[\s~`!@#$%^&*()\-_+=[\]{}|\\;:"\'“”‘’<>,.?/]+')
+_R_COMBINING = re.compile(r'[\u0300-\u036F]')
+_R_CONTROL = re.compile(r'[\u0000-\u001f]')
+
+
+def heading_slug(text):
+    """标题 → VitePress 锚点 id（与 @mdit-vue/shared 的 slugify 一致）。"""
+    import unicodedata
+    s = unicodedata.normalize('NFKD', text)
+    s = _R_COMBINING.sub('', s)
+    s = _R_CONTROL.sub('', s)
+    s = _R_SPECIAL.sub('-', s)
+    s = re.sub(r'-{2,}', '-', s)
+    s = re.sub(r'^-+|-+$', '', s)
+    s = re.sub(r'^(\d)', r'_\1', s)
+    return s.lower()
+
+
+def extract_headings(md_path, levels=(1, 2, 3, 4, 5, 6)):
+    """解析 md 标题，返回 [{level, text, anchor}]；锚点做全局去重，与 VitePress 一致。"""
+    try:
+        with open(md_path, encoding='utf-8', errors='replace') as f:
+            text = f.read()
+    except OSError:
+        return []
+    headings = []
+    used = {}
+    in_fence = False
+    for line in text.splitlines():
+        if line.lstrip().startswith('```'):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = re.match(r'^(#{1,6})\s+(.*)$', line)
+        if not m:
+            continue
+        level = len(m.group(1))
+        if level not in levels:
+            continue
+        title = re.sub(r'[`*_~]', '', m.group(2).strip())
+        anchor = heading_slug(title)
+        if anchor in used:
+            used[anchor] += 1
+            anchor = f'{anchor}-{used[anchor]}'
+        else:
+            used[anchor] = 0
+        headings.append({'level': level, 'text': title, 'anchor': anchor})
+    return headings
+
+
+def build_single_sidebar(headings, base_url):
+    """单文件站点：h2/h3 构成章节导航。h2 有 h3 子项时为分组，否则为链接。"""
+    items = []
+    cur = None
+    for h in headings:
+        if h['level'] == 2:
+            cur = {"text": h['text'], "anchor": h['anchor'], "items": []}
+            items.append(cur)
+        elif h['level'] == 3:
+            if cur is None:
+                cur = {"text": "章节", "anchor": None, "items": []}
+                items.append(cur)
+            cur["items"].append({"text": h['text'], "link": f"{base_url}#{h['anchor']}"})
+    result = []
+    for g in items:
+        if g["items"]:
+            result.append({"text": g["text"], "collapsed": False, "items": g["items"]})
+        elif g.get("anchor"):
+            result.append({"text": g["text"], "link": f"{base_url}#{g['anchor']}"})
+    return result
+
+
 def make_favicon_svg(title):
     """根据站点标题生成首字符 favicon SVG（品牌色渐变 + 居中首字符）。"""
     import html
@@ -346,7 +419,7 @@ export default defineConfig({
   },
 
   themeConfig: {
-    outline: { level: [2, 3], label: '本页章节' },
+    outline: @@OUTLINE@@,
     nav: [
       { text: '首页', link: '/' },
       { text: '文档', link: '/@@FIRST@@/' },
@@ -356,9 +429,7 @@ export default defineConfig({
     sidebar: [
       {
         text: '目录',
-        items: chapters.map((ch) => ch.type === 'group'
-          ? { text: ch.text, collapsed: true, items: ch.items }
-          : { text: ch.text, link: ch.link })
+        items: @@SIDEBAR_ITEMS@@
       }
     ],
     search: {
@@ -535,6 +606,19 @@ import { useModuleCatalog } from './moduleCatalog.mjs'
 
 const { modules, loading, error, load } = useModuleCatalog()
 
+const PRESET_COLORS = ['#0891b2', '#6d5ef0', '#a855f7', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#f43f5e']
+
+function colorFor(name) {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return PRESET_COLORS[h % PRESET_COLORS.length]
+}
+
+function cardStyle(m) {
+  const color = m.color || colorFor(m.name)
+  return { '--module-color': color, '--module-tint': color + '1f' }
+}
+
 function go(link) {
   window.location.href = link
 }
@@ -542,7 +626,7 @@ function go(link) {
 
 <template>
   <div class="module-grid">
-    <a v-for="(m, i) in modules" :key="m.name" :href="m.link" @click.prevent="go(m.link)" class="module-card">
+    <a v-for="(m, i) in modules" :key="m.name" :href="m.link" @click.prevent="go(m.link)" class="module-card" :style="cardStyle(m)">
       <span class="module-card-index" aria-hidden="true">{{ String(i + 1).padStart(2, '0') }}</span>
       <div class="module-card-title">{{ m.title }}</div>
       <div class="module-card-desc">{{ m.description }}</div>
@@ -554,65 +638,63 @@ function go(link) {
 </template>
 
 <style scoped>
-/* 讲义卡片：左侧色条 + 右上编号 */
+/* 子模块卡片：每行最多 5 个，主题色边框 + 渐变背景（颜色取自 site.json，缺省按名称稳定映射） */
 .module-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
   margin: 8px 0 32px;
-}
-.module-grid::before {
-  content: '';
-  grid-column: 1 / -1;
-  height: 3px;
-  margin-bottom: 6px;
-  background: linear-gradient(90deg, var(--campus-blue) 0 52px, var(--campus-line) 52px 100%);
 }
 .module-card {
   position: relative;
   display: block;
-  padding: 20px 20px 18px 22px;
-  background: var(--campus-card-bg);
-  border: 1px solid var(--vp-c-border);
-  border-left: 3px solid var(--campus-blue);
-  border-radius: 3px;
+  padding: 18px 16px 16px 20px;
+  background:
+    linear-gradient(135deg, var(--module-tint) 0%, transparent 62%),
+    var(--campus-card-bg);
+  border: 1px solid var(--module-color);
+  border-radius: 6px;
   text-decoration: none;
   color: inherit;
   box-shadow: 0 1px 2px rgba(31, 42, 68, 0.04);
-  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
 }
 .module-card:hover {
   transform: translateY(-2px);
-  border-color: var(--campus-blue);
-  border-left-color: var(--campus-red);
   box-shadow: 0 10px 24px rgba(31, 42, 68, 0.12);
 }
 .module-card-index {
   position: absolute;
-  top: 14px;
-  right: 16px;
+  top: 12px;
+  right: 14px;
   font-family: var(--campus-serif);
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: 0.08em;
-  color: var(--campus-blue);
-  opacity: 0.55;
+  color: var(--module-color);
+  opacity: 0.6;
 }
 .module-card-title {
   font-family: var(--campus-serif);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.02em;
   margin-bottom: 8px;
-  padding-right: 28px;
+  padding-right: 24px;
 }
 .module-card-desc {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.7;
   color: var(--vp-c-text-2);
   word-break: break-all;
 }
 .module-empty {
   color: var(--vp-c-text-2);
+}
+@media (max-width: 1024px) {
+  .module-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 640px) {
+  .module-grid { grid-template-columns: repeat(2, 1fr); }
 }
 </style>
 '''
@@ -835,6 +917,7 @@ foreach (glob($base . '/*', GLOB_ONLYDIR) as $dir) {
         'title' => (isset($meta['title']) && $meta['title'] !== '') ? $meta['title'] : $name,
         'description' => isset($meta['description']) ? $meta['description'] : '',
         'link' => $origin . $prefix . '/' . rawurlencode($name) . '/',
+        'color' => (isset($meta['color']) && is_string($meta['color']) && preg_match('/^#[0-9a-fA-F]{3,8}$/', $meta['color'])) ? $meta['color'] : null,
     ];
 }
 usort($modules, function ($a, $b) { return strcmp($a['name'], $b['name']); });
@@ -930,12 +1013,79 @@ body {
   box-shadow: 0 1px 14px rgba(99, 102, 241, 0.10);
 }
 
-/* 文档标题渐变 */
-.vp-doc h1, .vp-doc h2 {
+/* 文档标题：h1/h2 渐变文字，h2/h3 左侧装饰条，h4 品牌色 */
+.vp-doc h1 {
   background: var(--tech-gradient);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  padding-bottom: 14px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+.vp-doc h2 {
+  background: var(--tech-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  position: relative;
+  padding-left: 18px;
+  margin-top: 42px;
+}
+.vp-doc h2::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.16em;
+  bottom: 0.16em;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--tech-gradient);
+}
+.vp-doc h3 {
+  position: relative;
+  padding-left: 16px;
+  color: var(--vp-c-brand-1);
+}
+.vp-doc h3::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.3em;
+  bottom: 0.3em;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--tech-cyan);
+}
+.vp-doc h4 {
+  color: var(--vp-c-brand-2);
+}
+
+/* 左侧目录（sidebar）美化：hover 背景 + 当前项渐变竖条 + 文字高亮 */
+.VPSidebarItem.is-link .item {
+  position: relative;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+.VPSidebarItem.is-link .item:hover {
+  background: var(--vp-c-brand-soft);
+}
+.VPSidebarItem.is-link.is-active > .item {
+  background: var(--vp-c-brand-soft);
+}
+.VPSidebarItem.is-link.is-active > .item::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--tech-gradient);
+}
+.VPSidebarItem.is-link.is-active > .item .text {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
 }
 
 /* 链接：渐变下划线 + 换行 */
@@ -1676,12 +1826,35 @@ def main():
     chapter_items = ',\n'.join(
         json.dumps(e, ensure_ascii=False) for e in nav_entries
     )
+    # 单文件站点：左侧直接显示该文件的章节（h2 分组 + h3 链接），右侧 outline 关闭
+    single_sidebar_items = None
+    if len(nav_entries) == 1:
+        single = nav_entries[0]
+        single_link = single["items"][0]["link"] if single["type"] == "group" else single["link"]
+        slug = single_link.strip('/')
+        md_path = (os.path.join(docs, slug, 'index.md') if single_link.endswith('/')
+                   else os.path.join(docs, slug + '.md'))
+        items = build_single_sidebar(extract_headings(md_path, levels=(2, 3)), single_link)
+        if items:
+            single_sidebar_items = items
+
+    if single_sidebar_items is not None:
+        sidebar_items = json.dumps(single_sidebar_items, ensure_ascii=False)
+        outline_val = 'false'
+    else:
+        sidebar_items = ("chapters.map((ch) => ch.type === 'group'"
+                         " ? { text: ch.text, collapsed: true, items: ch.items }"
+                         " : { text: ch.text, link: ch.link })")
+        outline_val = "{ level: [2, 3], label: '本页章节' }"
+
     write(os.path.join(docs, '.vitepress', 'config.mjs'), render(CONFIG_TMPL, {
         'CHAPTER_ITEMS': chapter_items,
         'TITLE': title,
         'DESC': args.subtitle or title,
         'BASE': base,
         'FIRST': first_link,
+        'OUTLINE': outline_val,
+        'SIDEBAR_ITEMS': sidebar_items,
     }))
     write(os.path.join(docs, '.vitepress', 'theme', 'index.mjs'), THEME_INDEX)
     write(os.path.join(docs, '.vitepress', 'theme', 'custom.css'), CUSTOM_CSS)
