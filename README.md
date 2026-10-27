@@ -4,6 +4,12 @@
 
 **源目录只读**：所有产物写到独立目录，不会改动你的原始 Markdown。
 
+![image-20261027100947316](assets/image-20261027100947316.png)
+
+![image-20261027101002267](assets/image-20261027101002267.png)
+
+![image-20261027101029294](assets/image-20261027101029294.png)
+
 ## 在桌面 Agent 里安装
 
 在 Trae CN、Codex、Claude Code 等桌面 Agent 的对话框里，直接发仓库地址并说明意图即可：

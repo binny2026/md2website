@@ -2,6 +2,12 @@
 
 Turn a Markdown documentation project (multi-chapter tutorials, notes, course materials, handbooks) into a static documentation site, with one-command deployment to a remote server.
 
+![image-20261027100947316](assets/image-20261027100947316.png)
+
+![image-20261027101002267](assets/image-20261027101002267.png)
+
+![image-20261027101029294](assets/image-20261027101029294.png)
+
 ## Install from a desktop agent
 
 In Trae CN, Codex, Claude Code or any similar desktop agent, just send the repository URL:
