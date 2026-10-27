@@ -304,6 +304,15 @@ export default defineConfig({
     lineNumbers: true,
     theme: { light: 'github-light', dark: 'github-dark' },
     config(md) {
+      // mermaid 代码块：保留源码到 <pre class="mermaid">，由客户端 mermaid 渲染成 SVG
+      const fence = md.renderer.rules.fence.bind(md.renderer.rules);
+      md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+        const token = tokens[idx];
+        if (token.info.trim() === 'mermaid') {
+          return `<pre class="mermaid">${md.utils.escapeHtml(token.content)}</pre>`;
+        }
+        return fence(tokens, idx, options, env, self);
+      };
       // 正文中的 <https://...>、<占位符>、双花括号 会被 Vue 编译器误判为标签/插值，
       // 在 Vue 解析前把它们安全转成普通文本或链接。
       md.core.ruler.after('inline', 'escape_vue_syntax', (state) => {
@@ -379,7 +388,30 @@ export default defineConfig({
 THEME_INDEX = '''import DefaultTheme from 'vitepress/theme'
 import { onMounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vitepress'
+import mermaid from 'mermaid'
 import './custom.css'
+
+// 初始化 mermaid（客户端渲染 <pre class="mermaid"> 里的源码）
+mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' })
+
+// 渲染 mermaid 图
+async function renderMermaid() {
+  const els = document.querySelectorAll('pre.mermaid')
+  for (const el of els) {
+    if (el.dataset.processed) continue
+    el.dataset.processed = '1'
+    try {
+      const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const { svg } = await mermaid.render(id, el.textContent)
+      const div = document.createElement('div')
+      div.className = 'mermaid-rendered'
+      div.innerHTML = svg
+      el.replaceWith(div)
+    } catch (e) {
+      el.dataset.processed = ''
+    }
+  }
+}
 
 // 图片点击放大（替代 VuePress 的 medium-zoom 插件）
 function installZoom() {
@@ -412,7 +444,7 @@ export default {
   extends: DefaultTheme,
   setup() {
     const route = useRoute()
-    const run = () => nextTick(() => setTimeout(installZoom, 60))
+    const run = () => nextTick(() => setTimeout(() => { installZoom(); renderMermaid() }, 60))
     onMounted(run)
     watch(() => route.path, run)
   }
@@ -426,7 +458,30 @@ import { useRoute } from 'vitepress'
 import ModuleGrid from './ModuleGrid.vue'
 import PortalNav from './PortalNav.vue'
 import { createModuleCatalog, moduleCatalogKey } from './moduleCatalog.mjs'
+import mermaid from 'mermaid'
 import './custom.css'
+
+// 初始化 mermaid（客户端渲染 <pre class="mermaid"> 里的源码）
+mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' })
+
+// 渲染 mermaid 图
+async function renderMermaid() {
+  const els = document.querySelectorAll('pre.mermaid')
+  for (const el of els) {
+    if (el.dataset.processed) continue
+    el.dataset.processed = '1'
+    try {
+      const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const { svg } = await mermaid.render(id, el.textContent)
+      const div = document.createElement('div')
+      div.className = 'mermaid-rendered'
+      div.innerHTML = svg
+      el.replaceWith(div)
+    } catch (e) {
+      el.dataset.processed = ''
+    }
+  }
+}
 
 function installZoom() {
   document.querySelectorAll('.vp-doc img').forEach((img) => {
@@ -466,7 +521,7 @@ export default {
   },
   setup() {
     const route = useRoute()
-    const run = () => nextTick(() => setTimeout(installZoom, 60))
+    const run = () => nextTick(() => setTimeout(() => { installZoom(); renderMermaid() }, 60))
     onMounted(run)
     watch(() => route.path, run)
 
@@ -1162,6 +1217,15 @@ export default defineConfig({
     lineNumbers: true,
     theme: { light: 'github-light', dark: 'github-dark' },
     config(md) {
+      // mermaid 代码块：保留源码到 <pre class="mermaid">，由客户端 mermaid 渲染成 SVG
+      const fence = md.renderer.rules.fence.bind(md.renderer.rules);
+      md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+        const token = tokens[idx];
+        if (token.info.trim() === 'mermaid') {
+          return `<pre class="mermaid">${md.utils.escapeHtml(token.content)}</pre>`;
+        }
+        return fence(tokens, idx, options, env, self);
+      };
       md.core.ruler.after('inline', 'escape_vue_syntax', (state) => {
         for (const token of state.tokens) {
           if (token.type !== 'inline' || !token.children) continue
@@ -1242,7 +1306,8 @@ PACKAGE_JSON = '''{
     "deploy": "./deploy.sh"
   },
   "devDependencies": {
-    "vitepress": "^1.6.4"
+    "vitepress": "^1.6.4",
+    "mermaid": "^11.4.0"
   }
 }
 '''
