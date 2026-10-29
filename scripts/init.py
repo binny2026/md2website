@@ -352,6 +352,7 @@ def make_favicon_svg(title):
 # ---------------------------------------------------------------- 代码模板
 
 CONFIG_TMPL = '''import { defineConfig } from 'vitepress'
+import { markDeadLinks } from './dead-links.mjs'
 
 const base = `${(process.env.VP_BASE || '@@BASE@@').replace(/\\/+$/, '')}/`
 
@@ -370,13 +371,14 @@ export default defineConfig({
   // base 优先取环境变量 VP_BASE（子模块挂门户时由 deploy.sh 注入），否则用生成时的值
   base,
   cleanUrls: true,
-  // 源文档可能引用源码文件/已删除文档等站外内容，避免因死链导致整体构建失败
+  // 死链由两阶段构建标记，其他编译错误仍由 VitePress 正常抛出。
   ignoreDeadLinks: true,
 
   markdown: {
     lineNumbers: true,
     theme: { light: 'github-light', dark: 'github-dark' },
     config(md) {
+      markDeadLinks(md, base)
       // mermaid 代码块：保留源码到 <pre class="mermaid">，由客户端 mermaid 渲染成 SVG
       const fence = md.renderer.rules.fence.bind(md.renderer.rules);
       md.renderer.rules.fence = (tokens, idx, options, env, self) => {
@@ -1350,6 +1352,7 @@ features:
 
 # 门户站点：首页通过 ModuleGrid 组件动态加载子模块（fetch modules.json.php）
 PORTAL_CONFIG_TMPL = '''import { defineConfig } from 'vitepress'
+import { markDeadLinks } from './dead-links.mjs'
 
 const base = `${(process.env.VP_BASE || '@@BASE@@').replace(/\\/+$/, '')}/`
 
@@ -1362,11 +1365,13 @@ export default defineConfig({
   ],
   base,
   cleanUrls: true,
+  ignoreDeadLinks: true,
 
   markdown: {
     lineNumbers: true,
     theme: { light: 'github-light', dark: 'github-dark' },
     config(md) {
+      markDeadLinks(md, base)
       // mermaid 代码块：保留源码到 <pre class="mermaid">，由客户端 mermaid 渲染成 SVG
       const fence = md.renderer.rules.fence.bind(md.renderer.rules);
       md.renderer.rules.fence = (tokens, idx, options, env, self) => {
@@ -1451,11 +1456,12 @@ PACKAGE_JSON = '''{
   "private": true,
   "scripts": {
     "dev": "vitepress dev docs --host 127.0.0.1 --port 5174",
-    "build": "vitepress build docs",
+    "build": "node docs/.vitepress/dead-links.mjs",
     "preview": "vitepress preview docs --host 127.0.0.1 --port 4173",
     "deploy": "./deploy.sh"
   },
   "devDependencies": {
+    "parse5": "^7.2.1",
     "vitepress": "^1.6.4",
     "mermaid": "^11.4.0"
   }
@@ -1558,6 +1564,10 @@ def write(path, content):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f:
         f.write(content)
+    if os.path.basename(path) == 'config.mjs':
+        asset = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             'assets', 'dead-links.mjs')
+        shutil.copy2(asset, os.path.join(os.path.dirname(path), 'dead-links.mjs'))
 
 
 def copy_chapter(src_dir, dst_dir, src_root, url_map):

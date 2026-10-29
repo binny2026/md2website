@@ -54,11 +54,6 @@ def build(args):
     command += ['--out', str(project), '--name', args.name, '--title', args.title,
                 '--subtitle', args.subtitle, '--base', args.base]
     subprocess.run(command, check=True, env=env)
-    config = project / 'docs/.vitepress/config.mjs'
-    text = config.read_text(encoding='utf-8')
-    # Enforce dead-link checking only in this generated CI project.
-    text = re.sub(r'ignoreDeadLinks\s*:\s*true', 'ignoreDeadLinks: false', text)
-    config.write_text(text, encoding='utf-8')
     if args.portal:
         php = project / 'docs/public/modules.json.php'
         text = php.read_text(encoding='utf-8')
